@@ -56,7 +56,7 @@ public:
 			//"L:\\git_up\\anotherDebugger\\anotherDebugger\\Debug\\test.exe",
 			//"E:\\User Files\\Download\\PSTools\\PsExec64.exe",
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-03.exe",
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 01-04.exe",
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 04-04.exe",
 			//path,
 			NULL,
 			NULL,
@@ -538,22 +538,22 @@ void ShowCtx(CONTEXT c) {
 #include <inttypes.h>
 #include <Zydis/Zydis.h>
 #pragma comment(lib,"Zydis.lib")
-DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
-	DWORD DISP_VALUE = 0x19;
+DWORD64 DumpFnc(DWORD idx, bool bNotBones = true) {
+	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
 	c = dbg.GetContext();
-	c.Rip = dbg.procBase + 0xEC49A4; //48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00
+	c.Rip = dbg.procBase + 0xEB31B4; //48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00
 	c.Rcx = idx; //fnc index
 	dbg.SetContext(&c);
 
 	dbg.SingleStep();
 	c = dbg.GetContext();
-	c.Rip = dbg.procBase + 0xEC4A21;
+	c.Rip = dbg.procBase + 0xEB3231;
 	if (bNotBones) { //not bones, scan for decrypt_key_for_entity
-		DISP_VALUE = 0x09;
+		//DISP_VALUE = 0x0F;
 		c.Rax = idx;
-		c.Rip = dbg.procBase + 0xEDBB0B;
+		c.Rip = dbg.procBase + 0xECA44B; //scan for 24 03 75 29
 	}
 	dbg.SetContext(&c);
 
@@ -612,7 +612,13 @@ DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
 			&decoder, bRead, 20,
 			instructionPointer, &instruction));
 		//skip 00007FF603394F6D | 4C:8B41 0F                        | mov     r8, qword ptr ds:[rcx + 0xF]                                                   |
-		if (goodDec && (instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement && instruction.operands[1].mem.disp.value == DISP_VALUE) {
+		if (goodDec && (instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement  && instruction.operands[1].mem.disp.value<32) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
+			static bool bPrint = true;
+			if (!DISP_VALUE && bPrint) {
+				bPrint = false;
+				DISP_VALUE = instruction.operands[1].mem.disp.value;
+				printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+			}
 			bLastKey = true;
 			//skip
 			c = dbg.GetContext();
