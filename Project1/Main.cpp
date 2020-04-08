@@ -53,11 +53,7 @@ public:
 		unsigned int creationflags = DEBUG_ONLY_THIS_PROCESS | CREATE_SUSPENDED | CREATE_NEW_CONSOLE;
 
 		if (CreateProcessA(
-			//"L:\\git_up\\anotherDebugger\\anotherDebugger\\Debug\\test.exe",
-			//"E:\\User Files\\Download\\PSTools\\PsExec64.exe",
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-03.exe",
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 04-04.exe",
-			//path,
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
 			NULL,
 			NULL,
 			NULL,
@@ -538,22 +534,22 @@ void ShowCtx(CONTEXT c) {
 #include <inttypes.h>
 #include <Zydis/Zydis.h>
 #pragma comment(lib,"Zydis.lib")
-DWORD64 DumpFnc(DWORD idx, bool bNotBones = true) {
+DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
 	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
 	c = dbg.GetContext();
-	c.Rip = dbg.procBase + 0xEB31B4; //48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00
+	c.Rip = dbg.procBase + 0xEA1CE0; //48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00
 	c.Rcx = idx; //fnc index
 	dbg.SetContext(&c);
 
 	dbg.SingleStep();
 	c = dbg.GetContext();
-	c.Rip = dbg.procBase + 0xEB3231;
+	c.Rip = dbg.procBase + 0xEA1D5D;
 	if (bNotBones) { //not bones, scan for decrypt_key_for_entity
 		//DISP_VALUE = 0x0F;
 		c.Rax = idx;
-		c.Rip = dbg.procBase + 0xECA44B; //scan for 24 03 75 29
+		c.Rip = dbg.procBase + 0xEBA40B; //scan for 24 03 75 29
 	}
 	dbg.SetContext(&c);
 
@@ -566,14 +562,6 @@ DWORD64 DumpFnc(DWORD idx, bool bNotBones = true) {
 	dbg.SingleStep();
 	c = dbg.GetContext();
 	dwRet = c.Rax;
-
-	//loop till we find the end..
-	BYTE bEndSig[20] = { 0x4C ,0x8B ,0x7C ,0x24 ,0x20 ,0x4C ,0x8B ,0x74 ,0x24 ,0x28 ,0x4C ,0x8B ,0x6C ,0x24 ,0x30 ,0x4C ,0x8B ,0x64 ,0x24 ,0x60 };
-	BYTE bEndSig2[20] = { 0x44, 0x8B, 0x64, 0x24, 0x30, 0x44, 0x8B, 0x6C, 0x24, 0x34, 0x4C, 0x8B, 0x7C, 0x24, 0x40, 0x4C, 0x8B, 0x74, 0x24, 0x38 };
-	/*00007FF603397031 | 4C:8B7C24 20                      | mov     r15, qword ptr ss:[rsp + 0x20]                                                 |
-00007FF603397036 | 4C:8B7424 28                      | mov     r14, qword ptr ss:[rsp + 0x28]                                                 |
-00007FF60339703B | 4C:8B6C24 30                      | mov     r13, qword ptr ss:[rsp + 0x30]                                                 |
-00007FF603397040 | 4C:8B6424 60                      | mov     r12, qword ptr ss:[rsp + 0x60]                                                 |*/
 
 // Initialize decoder context.
 	ZydisDecoder decoder;
@@ -598,16 +586,9 @@ DWORD64 DumpFnc(DWORD idx, bool bNotBones = true) {
 	DWORD iImul = 0;
 	bool bLastKey = false;
 	DWORD64 dwKeys[4] = { 0,0,0,0 };
-	while(1) {
+	while(iImul<4) {
 		BYTE bRead[20];
 		dbg.ReadTo(c.Rip, bRead, 20);
-
-		//printf("F EIP: %p / %p / %p\n", c.Rip, c.Rdx, c.Rax);
-		if (!memcmp(bRead, bEndSig, 20) || !memcmp(bRead, bEndSig2, 20)) {
-			//printf("END SIG!\n");
-			break;
-		}
-
 		bool goodDec = ZYDIS_SUCCESS(ZydisDecoderDecodeBuffer(
 			&decoder, bRead, 20,
 			instructionPointer, &instruction));
