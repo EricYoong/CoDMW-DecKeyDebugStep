@@ -53,7 +53,8 @@ public:
 		unsigned int creationflags = DEBUG_ONLY_THIS_PROCESS | CREATE_SUSPENDED | CREATE_NEW_CONSOLE;
 
 		if (CreateProcessA(
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-04.exe",
 			NULL,
 			NULL,
 			NULL,
@@ -534,23 +535,25 @@ void ShowCtx(CONTEXT c) {
 #include <inttypes.h>
 #include <Zydis/Zydis.h>
 #pragma comment(lib,"Zydis.lib")
-DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
+DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false) {
 	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
 	c = dbg.GetContext();
-	c.Rip = dbg.procBase + 0xEA1CE0; //48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00
-	c.Rcx = idx; //fnc index
-	dbg.SetContext(&c);
+	//find call [fnc ] above  84 C0 74 04 B0 01 EB 02 32 C0 85 DB 74 4C 3B DE 7D 48
+	if (pSetReg) {
+		c.Rip = pSetReg;
+		c.Rcx = idx; //fnc index
+		dbg.SetContext(&c);
 
-	dbg.SingleStep();
-	c = dbg.GetContext();
-	c.Rip = dbg.procBase + 0xEA1D5D;
-	if (bNotBones) { //not bones, scan for decrypt_key_for_entity
-		//DISP_VALUE = 0x0F;
-		c.Rax = idx;
-		c.Rip = dbg.procBase + 0xEBA40B; //scan for 24 03 75 29
+		dbg.SingleStep();
+		c = dbg.GetContext();
 	}
+	else {
+		//not set reg
+		c.Rax = idx;
+	}
+	c.Rip =  pCmpJA;
 	dbg.SetContext(&c);
 
 	dbg.SingleStep();
@@ -586,6 +589,7 @@ DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
 	DWORD iImul = 0;
 	bool bLastKey = false;
 	DWORD64 dwKeys[4] = { 0,0,0,0 };
+	bool bPrint = true;
 	while(iImul<4) {
 		BYTE bRead[20];
 		dbg.ReadTo(c.Rip, bRead, 20);
@@ -593,14 +597,16 @@ DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
 			&decoder, bRead, 20,
 			instructionPointer, &instruction));
 		//skip 00007FF603394F6D | 4C:8B41 0F                        | mov     r8, qword ptr ds:[rcx + 0xF]                                                   |
-		if (goodDec && (instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement  && instruction.operands[1].mem.disp.value<32) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
-			static bool bPrint = true;
-			if (!DISP_VALUE && bPrint) {
-				bPrint = false;
-				DISP_VALUE = instruction.operands[1].mem.disp.value;
-				printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+		if (goodDec && (instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement  && instruction.operands[1].mem.disp.value<0x50) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
+			//printf("has DIPS %p\n", c.Rip);
+			if (instruction.operands[1].mem.disp.value < 32) {
+				if (!DISP_VALUE && bPrint && bShowDisp) {
+					bPrint = false;
+					DISP_VALUE = instruction.operands[1].mem.disp.value;
+					printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+				}
+				bLastKey = true;
 			}
-			bLastKey = true;
 			//skip
 			c = dbg.GetContext();
 			c.Rip += 4; //fnc index
@@ -637,6 +643,9 @@ DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
 							break;
 						case ZYDIS_REGISTER_RDI:
 							pReg = c.Rdi;
+							break;
+						case ZYDIS_REGISTER_R8:
+							pReg = c.R8;
 							break;
 						case ZYDIS_REGISTER_R9:
 							pReg = c.R9;
@@ -687,13 +696,220 @@ DWORD64 DumpFnc(DWORD idx, bool bNotBones = false) {
 
 	return dwRet;
 }
+
+#include <vector>
+#define SIZE_OF_NT_SIGNATURE (sizeof(DWORD))
+#define PEFHDROFFSET(a) (PIMAGE_FILE_HEADER)((LPVOID)((BYTE *)a + ((PIMAGE_DOS_HEADER)a)->e_lfanew + SIZE_OF_NT_SIGNATURE))
+#define SECHDROFFSET(ptr) (PIMAGE_SECTION_HEADER)((LPVOID)((BYTE *)(ptr)+((PIMAGE_DOS_HEADER)(ptr))->e_lfanew+SIZE_OF_NT_SIGNATURE+sizeof(IMAGE_FILE_HEADER)+sizeof(IMAGE_OPTIONAL_HEADER)))
+
+PIMAGE_SECTION_HEADER getCodeSection(LPVOID lpHeader) {
+	PIMAGE_FILE_HEADER pfh = PEFHDROFFSET(lpHeader);
+	if (pfh->NumberOfSections < 1)
+	{
+		return NULL;
+	}
+	PIMAGE_SECTION_HEADER psh = SECHDROFFSET(lpHeader);
+	return psh;
+}
+size_t replace_all(std::string& str, const std::string& from, const std::string& to) {
+	size_t count = 0;
+
+	size_t pos = 0;
+	while ((pos = str.find(from, pos)) != std::string::npos) {
+		str.replace(pos, from.length(), to);
+		pos += to.length();
+		++count;
+	}
+
+	return count;
+}
+
+bool is_hex_char(const char& c) {
+	return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F');
+}
+std::vector<int> pattern(std::string patternstring) {
+	std::vector<int> result;
+	const uint8_t hashmap[] = {
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //  !"#$%&'
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ()*+,-./
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, // 01234567
+		0x08, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 89:;<=>?
+		0x00, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x00, // @ABCDEFG
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // HIJKLMNO
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // PQRSTUVW
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // XYZ[\]^_
+		0x00, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x00, // `abcdefg
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // hijklmno
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // pqrstuvw
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // xyz{|}~.
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ........
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // ........
+	};
+	replace_all(patternstring, "??", " ? ");
+	replace_all(patternstring, "?", " ?? ");
+	replace_all(patternstring, " ", "");
+	//boost::trim(patternstring);
+	//assert(patternstring.size() % 2 == 0);
+	for (std::size_t i = 0; i < patternstring.size() - 1; i += 2) {
+		if (patternstring[i] == '?' && patternstring[i + 1] == '?') {
+			result.push_back(0xFFFF);
+			continue;
+		}
+		//assert(is_hex_char(patternstring[i]) && is_hex_char(patternstring[i + 1]));
+		result.push_back((uint8_t)(hashmap[patternstring[i]] << 4) | hashmap[patternstring[i + 1]]);
+	}
+	return result;
+}
+
+std::vector<std::size_t> find_pattern(const uint8_t* data, std::size_t data_size, const std::vector<int>& pattern) {
+	// simple pattern searching, nothing fancy. boyer moore horsepool or similar can be applied here to improve performance
+	std::vector<std::size_t> result;
+	for (std::size_t i = 0; i < data_size - pattern.size() + 1; i++) {
+		std::size_t j;
+		for (j = 0; j < pattern.size(); j++) {
+			if (pattern[j] == 0xFFFF) {
+				continue;
+			}
+			if (pattern[j] != data[i + j]) {
+				break;
+			}
+		}
+		if (j == pattern.size()) {
+			result.push_back(i);
+		}
+	}
+	return result;
+}
+#include <Psapi.h>
+HMODULE GetModuleBaseAddress(HANDLE handle) {
+	HMODULE hMods[1024];
+	DWORD   cbNeeded;
+
+	if (EnumProcessModules(handle, hMods, sizeof(hMods), &cbNeeded)) {
+		//MessageBoxA(0, "GetBase ErrorY2", "ErrorY2", 0);
+		return hMods[0];
+	}
+	MessageBoxA(0, "GetBase ErrorX2", "ErrorX2 NO BASE!?", 0);
+	return NULL;
+}
+std::vector<std::size_t> AOBScan(std::string str_pattern) {
+	std::vector<std::size_t> ret;
+	HANDLE hProc = dbg.debuggeehProcess;
+
+	ULONG_PTR dwStart = dbg.procBase;
+
+	LPVOID lpHeader = malloc(0x1000);
+	ReadProcessMemory(hProc, (LPCVOID)dwStart, lpHeader, 0x1000, NULL);
+
+	DWORD delta = 0x1000;
+	LPCVOID lpStart = 0; //0
+	DWORD nSize = 0;// 0x548a000;
+
+	PIMAGE_SECTION_HEADER SHcode = getCodeSection(lpHeader);
+	if (SHcode) {
+		nSize = SHcode->Misc.VirtualSize;
+		delta = SHcode->VirtualAddress;
+		lpStart = ((LPBYTE)dwStart + delta);
+	}
+	if (nSize) {
+		
+		LPVOID lpCodeSection = malloc(nSize);
+		ReadProcessMemory(hProc, lpStart, lpCodeSection, nSize, NULL);
+
+		//sprintf_s(szPrint, 124, "Size: %i / Start:%p / Base: %p", nSize, dwStart,lpStart);
+		//MessageBoxA(0, szPrint, szPrint, 0);
+		//
+		auto res = find_pattern((const uint8_t*)lpCodeSection, nSize, pattern(str_pattern.c_str()));
+		ret = res;
+		for (UINT i = 0; i < ret.size(); i++) {
+			ret[i] += delta;
+		}
+
+		free(lpCodeSection);
+	}
+	else {
+		printf("bad .code section.\n");
+	}
+	free(lpHeader);
+
+
+	return ret;
+}
+template <class T>
+T Read(DWORD64 adr) {
+	T t = T();
+	ReadProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
+	return t;
+}
+template <class T>
+T Read(LPBYTE adr) {
+	T t = T();
+	ReadProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
+	return t;
+}
+DWORD DoScan(std::string pattern, DWORD offset = 0, DWORD base_offset = 0, DWORD pre_base_offset = 0, DWORD rIndex = 0) {
+	//ULONG_PTR dwBase = (DWORD_PTR)GetModuleHandleW(NULL);
+	auto r = AOBScan(pattern);
+	if (!r.size())
+		return 0;
+	//char msg[124];
+	//sprintf_s(msg,124,"%s ret %i\n",pattern.c_str(),r.size() );
+	//OutputDebugStringA(msg);
+	DWORD ret = r[rIndex] + pre_base_offset;
+	if (offset == 0) {
+		return ret + base_offset;
+	}
+	DWORD dRead = Read<DWORD>((LPBYTE)dbg.debuggeehProcess + ret + offset);
+	ret = ret + dRead + base_offset;
+	//ret = ret + *(DWORD*)(dwBase + ret + offset) + base_offset;
+	return ret;
+}
 int main() {
 	printf("Hi!\n");
 	dbg.InitProcess();
 	dbg.SingleStep();
+
+	DWORD64 pBase = dbg.procBase;
+	//aob scan
+	DWORD64 pBoneScan = pBase+DoScan("56 57 48 83 EC ?? 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
+	DWORD64 pSetRdx = pBoneScan;
+	//find lea rdx, ds:[0x00007FF796840000]
+	while (Read<WORD>(pSetRdx) != 0x8D48 && Read<BYTE>(pSetRdx + 2) != 0x15)
+		pSetRdx++;
+	DWORD64 pCmpJA = pSetRdx;
+	while (Read<DWORD>(pCmpJA) != 0x0EF98348) pCmpJA++;
+	printf("pBoneBase: %p / %p / %p\n", pBoneScan,pSetRdx, pCmpJA);
+
+	for (int i = 0; i < 16; i++) {
+		DumpFnc(i,pCmpJA,pSetRdx,i==0);
+	}
+
+	DWORD64 pEntScan = pBase + DoScan("24 03 75 29")+0x80;
+	pCmpJA = pEntScan;
+	while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
+	printf("pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
+
 	//DumpFnc(14);
 	for (int i = 0; i < 16; i++) {
-		DumpFnc(i);
+		DumpFnc(i, pCmpJA, 0,i==0);
 	}
 	//printf("FNC0: %p\n", DumpFnc(0));
 	//printf("FNC1: %p\n", DumpFnc(1));
