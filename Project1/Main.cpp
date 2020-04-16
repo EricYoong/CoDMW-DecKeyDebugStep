@@ -13,6 +13,7 @@ enum class DebuggeeStatus
 	SUSPENDED,
 	INTERRUPTED
 };
+bool bExcept = false;
 class CDebugger {
 public:
 	bool DEBUG = !true;//dbg mode
@@ -456,7 +457,7 @@ public:
 			break;
 		case 0xC0000005:
 			debuggeeStatus = DebuggeeStatus::INTERRUPTED;
-
+			bExcept = true;
 			printf("%p - access violation!!!\n", pInfo->ExceptionRecord.ExceptionAddress);
 			return false;//
 			break;
@@ -596,25 +597,36 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 		bool goodDec = ZYDIS_SUCCESS(ZydisDecoderDecodeBuffer(
 			&decoder, bRead, 20,
 			instructionPointer, &instruction));
-		//skip 00007FF603394F6D | 4C:8B41 0F                        | mov     r8, qword ptr ds:[rcx + 0xF]                                                   |
-		if (goodDec && (instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement  && instruction.operands[1].mem.disp.value<0x50) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
-			//printf("has DIPS %p\n", c.Rip);
-			if (instruction.operands[1].mem.disp.value < 32) {
-				if (!DISP_VALUE && bPrint && bShowDisp) {
-					bPrint = false;
-					DISP_VALUE = instruction.operands[1].mem.disp.value;
-					printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+		//printf("%p / %p X has DIPS %i / %p\n",c.Rax, c.Rip,instruction.operands[1].mem.disp.hasDisplacement,instruction.operands[1].mem.disp.value);
+
+
+		if (goodDec && (instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement ) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
+			if (instruction.operands[1].mem.disp.value < 0x50) {
+				//printf("has DIPS %p\n", c.Rip);
+				if (instruction.operands[1].mem.disp.value < 32) {
+					if (!DISP_VALUE && bPrint && bShowDisp) {
+						bPrint = false;
+						DISP_VALUE = instruction.operands[1].mem.disp.value;
+						printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+					}
+					bLastKey = true;
 				}
-				bLastKey = true;
+				//skip
+				c = dbg.GetContext();
+				c.Rip += instruction.length; //fnc index
+				if (instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
+					bLastKey = false;
+					iImul++;//skip lastKey
+				}
+				dbg.SetContext(&c);
+				continue;
 			}
-			//skip
+
+		}
+		if (bExcept) { //we got an exception? so best to skip for safety
+			bExcept = false;
 			c = dbg.GetContext();
-			c.Rip += 4; //fnc index
-			if (instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
-				bLastKey = false;
-				iImul++;//skip lastKey
-				c.Rip++;
-			}
+			c.Rip += instruction.length; //fnc index
 			dbg.SetContext(&c);
 			continue;
 		}
@@ -886,7 +898,7 @@ int main() {
 	printf("Hi!\n");
 	dbg.InitProcess();
 	dbg.SingleStep();
-
+	bExcept = false;
 	DWORD64 pBase = dbg.procBase;
 	//aob scan
 	DWORD64 pBoneScan = pBase+DoScan("56 57 48 83 EC ?? 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
@@ -907,44 +919,23 @@ int main() {
 	while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
 	printf("pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
-	//DumpFnc(14);
 	for (int i = 0; i < 16; i++) {
 		DumpFnc(i, pCmpJA, 0,i==0);
 	}
-	//printf("FNC0: %p\n", DumpFnc(0));
-	//printf("FNC1: %p\n", DumpFnc(1));
-#if 0
-	//set RIP..
-	/*c = dbg.GetContext();
-	ShowCtx(c);
-	DWORD64 base = dbg.Read <DWORD64>(c.Rdx + 0x10);
-	printf("base: %p / %p\n", c.Rdx, base);
-	c.Rip = procBase+0xE74D84;
-	dbg.SetContext(&c);
-	getchar();*/
-	c = dbg.GetContext();
-	//c.Rip++;
-	c.Rip = dbg.procBase + 0xE74D84;
-	dbg.SetContext(&c);
 
-	//print eip
-	printf("A EIP: %p / %p\n", c.Rip,c.Rsp);
+	//CMD
+	DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89",0,0,0,3)+0xBE;
+	printf("pCmd: %p\n", pCmd);
+	DumpFnc(0, pCmd,0,true);
 
-	//dbg.StepIn();
-	dbg.SingleStep();
-	c = dbg.GetContext();
-	c.Rip = dbg.procBase + 0xE74D84;
-	dbg.SetContext(&c);
+	//now offsets
+	printf("#define NAME_ARRAY_OFFSET %p\n", DoScan(("33 F6 48 8B E8 8B DE 85 FF 7E 25"), 3, 7, 0x0B));
 
-	c = dbg.GetContext();
-	printf("B EIP: %p / %p\n", c.Rip, c.Rsp);
+	DWORD64 pCheck = pBase+DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3")-0x20;
+	printf("#define VALID_OFFSET 0x%04X\n", Read<DWORD>(pCheck + 2));
+	printf("#define TYPE_OFFSET 0x%04X\n", Read<BYTE>(pCheck + 12));
 
-	dbg.SingleStep();
 
-	c = dbg.GetContext();
-	printf("C EIP: %p / %p\n", c.Rip, c.Rsp);
-
-#endif
 	getchar();
 	return 0;
 }
