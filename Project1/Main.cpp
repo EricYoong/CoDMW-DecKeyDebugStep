@@ -47,7 +47,7 @@ public:
 
 	DWORD64 procBase;
 	void InitProcess() {
-
+		static int iInit = 0;
 		STARTUPINFOA startupinfo = { 0 };
 		startupinfo.cb = sizeof(startupinfo);
 		PROCESS_INFORMATION processinfo = { 0 };
@@ -55,8 +55,10 @@ public:
 
 		if (CreateProcessA(
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-04.exe",
-			NULL,
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-04.exe",
+			iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 21-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
+			,NULL,
 			NULL,
 			NULL,
 			FALSE,
@@ -533,10 +535,23 @@ void ShowCtx(CONTEXT c) {
 	printf("RDI: %p\n", c.Rdi);
 }
 
+template <class T>
+T Read(DWORD64 adr) {
+	T t = T();
+	ReadProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
+	return t;
+}
+template <class T>
+T Read(LPBYTE adr) {
+	T t = T();
+	ReadProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
+	return t;
+}
 #include <inttypes.h>
 #include <Zydis/Zydis.h>
 #pragma comment(lib,"Zydis.lib")
-DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false) {
+ZydisDecoder decoder;
+DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = false) {
 	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
@@ -567,17 +582,6 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 	c = dbg.GetContext();
 	dwRet = c.Rax;
 
-// Initialize decoder context.
-	ZydisDecoder decoder;
-	ZydisDecoderInit(
-		&decoder,
-		ZYDIS_MACHINE_MODE_LONG_64,
-		ZYDIS_ADDRESS_WIDTH_64);
-
-	// Initialize formatter. Only required when you actually plan to
-	// do instruction formatting ("disassembling"), like we do here.
-	ZydisFormatter formatter;
-	ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
 
 	// Loop over the instructions in our buffer.
 	// The IP is chosen arbitrary here in order to better visualize
@@ -590,7 +594,9 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 	DWORD iImul = 0;
 	bool bLastKey = false;
 	DWORD64 dwKeys[4] = { 0,0,0,0 };
+	DWORD iRev = 0;
 	bool bPrint = true;
+
 	while(iImul<4) {
 		BYTE bRead[20];
 		dbg.ReadTo(c.Rip, bRead, 20);
@@ -598,30 +604,44 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 			&decoder, bRead, 20,
 			instructionPointer, &instruction));
 		//printf("%p / %p X has DIPS %i / %p\n",c.Rax, c.Rip,instruction.operands[1].mem.disp.hasDisplacement,instruction.operands[1].mem.disp.value);
+		if (!goodDec) break;
 
-
-		if (goodDec && (instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement ) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
-			if (instruction.operands[1].mem.disp.value < 0x50) {
-				//printf("has DIPS %p\n", c.Rip);
-				if (instruction.operands[1].mem.disp.value < 32) {
-					if (!DISP_VALUE && bPrint && bShowDisp) {
-						bPrint = false;
-						DISP_VALUE = instruction.operands[1].mem.disp.value;
-						printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+		if (instruction.mnemonic == ZYDIS_MNEMONIC_JMP) bRdy = true;
+		if (bRdy) {
+			if ((instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
+				if (instruction.operands[1].mem.disp.value < 0x50) {
+					//printf("has DIPS %p\n", c.Rip);
+					if (instruction.operands[1].mem.disp.value < 0x32) {
+						if (!DISP_VALUE && bPrint && bShowDisp) {
+							bPrint = false;
+							DISP_VALUE = instruction.operands[1].mem.disp.value;
+							printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+							if (!iRev && bShowDisp) {
+								auto pRead = c.Rip - 10;
+								iRev = pRead + 7 + Read<DWORD>(pRead + 3) - dbg.procBase;
+								printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", iRev);
+							}
+						}
+						
+						bLastKey = true;
 					}
-					bLastKey = true;
+					//skip
+					c = dbg.GetContext();
+					c.Rip += instruction.length; //fnc index
+					if (instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
+						bLastKey = false;
+						iImul++;//skip lastKey
+					}
+					dbg.SetContext(&c);
+					continue;
 				}
-				//skip
-				c = dbg.GetContext();
-				c.Rip += instruction.length; //fnc index
-				if (instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
-					bLastKey = false;
-					iImul++;//skip lastKey
+				else if (!iRev && bShowDisp) {
+					DWORD pPtr = c.Rip + 7 + instruction.operands[1].mem.disp.value - dbg.procBase;
+					printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", pPtr);
+					iRev = pPtr;
 				}
-				dbg.SetContext(&c);
-				continue;
-			}
 
+			}
 		}
 		if (bExcept) { //we got an exception? so best to skip for safety
 			bExcept = false;
@@ -647,11 +667,17 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 						case ZYDIS_REGISTER_RAX:
 							pReg = c.Rax;
 							break;
+						case ZYDIS_REGISTER_RBX:
+							pReg = c.Rbx;
+							break;
 						case ZYDIS_REGISTER_RCX:
 							pReg = c.Rcx;
 							break;
 						case ZYDIS_REGISTER_RBP:
 							pReg = c.Rbp;
+							break;
+						case ZYDIS_REGISTER_RSI:
+							pReg = c.Rsi;
 							break;
 						case ZYDIS_REGISTER_RDI:
 							pReg = c.Rdi;
@@ -681,7 +707,7 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 							pReg = c.R15;
 							break;
 						default:
-							printf("unk good zydis %i\n", reg);
+							printf("unk good zydis %i / %p\n", reg,c.Rip);
 							break;
 						}
 					}
@@ -865,18 +891,6 @@ std::vector<std::size_t> AOBScan(std::string str_pattern) {
 
 	return ret;
 }
-template <class T>
-T Read(DWORD64 adr) {
-	T t = T();
-	ReadProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
-	return t;
-}
-template <class T>
-T Read(LPBYTE adr) {
-	T t = T();
-	ReadProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
-	return t;
-}
 DWORD DoScan(std::string pattern, DWORD offset = 0, DWORD base_offset = 0, DWORD pre_base_offset = 0, DWORD rIndex = 0) {
 	//ULONG_PTR dwBase = (DWORD_PTR)GetModuleHandleW(NULL);
 	auto r = AOBScan(pattern);
@@ -889,52 +903,159 @@ DWORD DoScan(std::string pattern, DWORD offset = 0, DWORD base_offset = 0, DWORD
 	if (offset == 0) {
 		return ret + base_offset;
 	}
-	DWORD dRead = Read<DWORD>((LPBYTE)dbg.debuggeehProcess + ret + offset);
+	DWORD dRead = Read<DWORD>((LPBYTE)dbg.procBase + ret + offset);
 	ret = ret + dRead + base_offset;
 	//ret = ret + *(DWORD*)(dwBase + ret + offset) + base_offset;
 	return ret;
 }
-int main() {
-	printf("Hi!\n");
+void Dump() {
+
 	dbg.InitProcess();
-	dbg.SingleStep();
-	bExcept = false;
 	DWORD64 pBase = dbg.procBase;
-	//aob scan
-	DWORD64 pBoneScan = pBase+DoScan("56 57 48 83 EC ?? 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
-	DWORD64 pSetRdx = pBoneScan;
-	//find lea rdx, ds:[0x00007FF796840000]
-	while (Read<WORD>(pSetRdx) != 0x8D48 && Read<BYTE>(pSetRdx + 2) != 0x15)
-		pSetRdx++;
-	DWORD64 pCmpJA = pSetRdx;
-	while (Read<DWORD>(pCmpJA) != 0x0EF98348) pCmpJA++;
-	printf("pBoneBase: %p / %p / %p\n", pBoneScan,pSetRdx, pCmpJA);
+	bool bGenKey = true;
+	if (bGenKey) {
+		dbg.SingleStep();
+		bExcept = false;
+		//aob scan
+		printf("//Bone Dump\n");
+		DWORD64 pBoneScan = pBase + DoScan("56 57 48 83 EC ?? 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
+		DWORD64 pSetRdx = pBoneScan;
+		//find lea rdx, ds:[0x00007FF796840000]
+		while (Read<DWORD>(pSetRdx) != 0x840FC084)
+			pSetRdx++;
+		pSetRdx += 8;
 
-	for (int i = 0; i < 16; i++) {
-		DumpFnc(i,pCmpJA,pSetRdx,i==0);
+		DWORD pEncrypt = 0;
+		DWORD64 movsx = 0;
+		uint64_t instructionPointer = 0x007FFFFFFF400000;
+		ZydisDecodedInstruction instruction;
+		DWORD64 pScan = pSetRdx + 7;
+		//lets use zydis
+		while (!movsx || !pEncrypt) {
+			BYTE bRead[20];
+			dbg.ReadTo(pScan, bRead, 20);
+			bool goodDec = ZYDIS_SUCCESS(ZydisDecoderDecodeBuffer(
+				&decoder, bRead, 20,
+				instructionPointer, &instruction));
+			if (goodDec) {
+				//look for movsx
+				if (instruction.mnemonic == ZYDIS_MNEMONIC_MOVSX) {
+					//printf("found %i\n", instruction.mnemonic);
+					movsx = instruction.operands[1].mem.disp.value;
+					printf("DWORD INDEX_ARRAY_OFFSET = 0x%08X;\n", movsx);
+					//break;
+				}
+				else if (instruction.mnemonic == ZYDIS_MNEMONIC_MOV) {
+					if (instruction.operands[1].mem.disp.value > 0x100) {
+						pEncrypt = pScan + 7 + instruction.operands[1].mem.disp.value - pBase;
+						printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
+					}
+				}
+				pScan += instruction.length;
+			}
+		}
+		printf("#define BONE_BASE_POS 0x%08X\n", Read<DWORD>(pBase + DoScan(("74 0e ?? ?? ?? ?? ?? ?? ?? B8 ?? ?? ?? ?? 74 05 B8")) + 17));
+
+		//now get x and y
+		//find ENCRYPT_PTR_OFFSET 
+		//find INDEX_ARRAY_OFFSET  
+		//find REVERSED_ADDRESS  
+		//find BONE_BASE_POS ?????  
+
+		DWORD64 pCmpJA = pSetRdx;
+		while (Read<DWORD>(pCmpJA) != 0x0EF98348) pCmpJA++;
+		printf("pBoneBase: %p / %p / %p\n", pBoneScan, pSetRdx, pCmpJA);
+
+		for (int i = 0; i < 16; i++) {
+			DumpFnc(i, pCmpJA, pSetRdx, i == 0);
+		}
+
+		printf("//Entity Dump\n");
+		DWORD64 pEntScan = pBase + DoScan("24 03 75 29") + 0x80;
+
+		pEncrypt = 0;
+		//lets use zydis
+		pScan = pEntScan;
+		while (!pEncrypt) {
+			BYTE bRead[20];
+			dbg.ReadTo(pScan, bRead, 20);
+			bool goodDec = ZYDIS_SUCCESS(ZydisDecoderDecodeBuffer(
+				&decoder, bRead, 20,
+				instructionPointer, &instruction));
+			if (goodDec) {
+				if (instruction.mnemonic == ZYDIS_MNEMONIC_MOV) {
+					if (instruction.operands[1].mem.disp.value > 0x100) {
+
+						pEncrypt = pScan + 7 + instruction.operands[1].mem.disp.value - pBase;
+						printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
+						break;
+					}
+				}
+				pScan += instruction.length;
+			}
+		}
+
+		pCmpJA = pEntScan;
+		while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
+		printf("pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
+
+		for (int i = 0; i < 16; i++) {
+			DumpFnc(i, pCmpJA, 0, i == 0);
+		}
+
+		printf("//CMD Dump\n");
+		//CMD
+		//DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89", 0, 0, 0, 3) + 0x1DF;
+		DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89", 0, 0, 0, 3) + 0x1D6;
+		printf("pCmd: %p\n", pCmd);
+		DumpFnc(0, pCmd, 0, true);
+
+		printf("//clientnfo_t Dump\n");
+		DWORD64 pClientInfo = pBase + DoScan("0F 29 74 24 20 0F 28 F3 81 FB FF 07 00 00")+0x14;
+		printf("clientnfo_t: %p\n", pClientInfo);
+		pEncrypt = Read<DWORD>(pClientInfo+3)+pClientInfo+7-pBase;
+		printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
+		DumpFnc(0, pClientInfo, 0, true,true);
+		//search for imul..
+		
 	}
 
-	DWORD64 pEntScan = pBase + DoScan("24 03 75 29")+0x80;
-	pCmpJA = pEntScan;
-	while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
-	printf("pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
-
-	for (int i = 0; i < 16; i++) {
-		DumpFnc(i, pCmpJA, 0,i==0);
-	}
-
-	//CMD
-	DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89",0,0,0,3)+0xBE;
-	printf("pCmd: %p\n", pCmd);
-	DumpFnc(0, pCmd,0,true);
-
+	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("49 03 D8 0F 2F 37 76 6A")) -4));
 	//now offsets
-	printf("#define NAME_ARRAY_OFFSET %p\n", DoScan(("33 F6 48 8B E8 8B DE 85 FF 7E 25"), 3, 7, 0x0B));
+	printf("#define NORECOIL_OFFSET  0x%08X\n", Read<DWORD>(pBase + DoScan(("0F 28 C2 0F 28 CA F3 0F 59 45 00 F3 AA F3 0F 11 45 00")) +0x2E));
+	printf("#define NAME_ARRAY_OFFSET 0x%08X\n", DoScan(("33 F6 48 8B E8 8B DE 85 FF 7E 25"), 3, 7, 0x0B));
 
-	DWORD64 pCheck = pBase+DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3")-0x20;
+	auto dwCAM_PTR = DoScan(("F3 0F 11 89 C4 01 00 00 F3 0F 11 91 C8 01 00 00 C6 81 C0 01 00 00 01"), 3, 7, -7);
+	printf("#define CAM_PTR 0x%08X\n", dwCAM_PTR);
+	printf("#define DEFREF_PTR 0x%08X\n", DoScan(("4C 8B 7C 24 68 33 C0 49 89 45 60 41 89 45 68"), 3, 7, 0xF)); //veirfy plz
+	printf("#define FunctionDisTribute 0x%08X\n", DoScan(("41 0F B7 84 50 00 88 13 00 66 39 41 02"), 3, 7, -7));
+	printf("#define AboutVisibleFunction 0x%08X\n", DoScan(("F3 0F 11 83 1C 01 00 00 83 8B 3C 01 00 00 03 48 89 83 88 00 00 00"),3,7,0x16));
+	//printf("#define decrypt_key_for_bone_base 0x%08X\n", DoScan(("48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00")));
+
+	//DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x20;
+	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x26;
 	printf("#define VALID_OFFSET 0x%04X\n", Read<DWORD>(pCheck + 2));
-	printf("#define TYPE_OFFSET 0x%04X\n", Read<BYTE>(pCheck + 12));
+	printf("#define TYPE_OFFSET 0x%04X\n", Read<DWORD>(pCheck + 12));
 
+
+}
+int main() {
+
+	// Initialize decoder context.
+	ZydisDecoderInit(
+		&decoder,
+		ZYDIS_MACHINE_MODE_LONG_64,
+		ZYDIS_ADDRESS_WIDTH_64);
+
+	// Initialize formatter. Only required when you actually plan to
+	// do instruction formatting ("disassembling"), like we do here.
+	ZydisFormatter formatter;
+	ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
+	printf("Hi!\n");
+
+	Dump();
+	printf("//===========================//\n");
+	Dump();
 
 	getchar();
 	return 0;
