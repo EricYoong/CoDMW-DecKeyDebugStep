@@ -56,7 +56,9 @@ public:
 		if (CreateProcessA(
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-04.exe",
-			iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 21-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
+			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 21-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
+			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe"
+			iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -571,16 +573,17 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 	}
 	c.Rip =  pCmpJA;
 	dbg.SetContext(&c);
+	if (!bRdy) {
+		dbg.SingleStep();
+		c = dbg.GetContext();
 
-	dbg.SingleStep();
-	c = dbg.GetContext();
+		dbg.SingleStep();
+		c = dbg.GetContext();
 
-	dbg.SingleStep();
-	c = dbg.GetContext();
-
-	dbg.SingleStep();
-	c = dbg.GetContext();
-	dwRet = c.Rax;
+		dbg.SingleStep();
+		c = dbg.GetContext();
+		dwRet = c.Rax;
+	}
 
 
 	// Loop over the instructions in our buffer.
@@ -1020,7 +1023,8 @@ void Dump() {
 		
 	}
 
-	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("49 03 D8 0F 2F 37 76 6A")) -4));
+	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("49 03 D8 0F 2F 37 76 6A")) - 4));
+	printf("#define BASE_OFFSET 0x%04X\n", Read<DWORD>(pBase + DoScan(("48 8B 7C 24 40 48 85 C0 74 22")) - 4));
 	//now offsets
 	printf("#define NORECOIL_OFFSET  0x%08X\n", Read<DWORD>(pBase + DoScan(("0F 28 C2 0F 28 CA F3 0F 59 45 00 F3 AA F3 0F 11 45 00")) +0x2E));
 	printf("#define NAME_ARRAY_OFFSET 0x%08X\n", DoScan(("33 F6 48 8B E8 8B DE 85 FF 7E 25"), 3, 7, 0x0B));
@@ -1032,10 +1036,14 @@ void Dump() {
 	printf("#define AboutVisibleFunction 0x%08X\n", DoScan(("F3 0F 11 83 1C 01 00 00 83 8B 3C 01 00 00 03 48 89 83 88 00 00 00"),3,7,0x16));
 	//printf("#define decrypt_key_for_bone_base 0x%08X\n", DoScan(("48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00")));
 
-	//DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x20;
-	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x26;
-	printf("#define VALID_OFFSET 0x%04X\n", Read<DWORD>(pCheck + 2));
-	printf("#define TYPE_OFFSET 0x%04X\n", Read<DWORD>(pCheck + 12));
+	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x20;
+	//DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x26;
+	DWORD pOff = Read<DWORD>(pCheck + 2);
+	if(pOff > 0x500) pOff = Read<BYTE>(pCheck + 5);
+	printf("#define VALID_OFFSET 0x%04X //%p\n", pOff,pCheck);
+	pOff = Read<DWORD>(pCheck + 12);
+	if (pOff > 0x500) pOff = Read<BYTE>(pCheck + 12);
+	printf("#define TYPE_OFFSET 0x%04X\n", pOff);
 
 
 }
