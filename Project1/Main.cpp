@@ -621,7 +621,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 
 		if (instruction.mnemonic == ZYDIS_MNEMONIC_JMP) bRdy = true;
 		if (bRdy) {
-			if ((instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) && instruction.operands[1].mem.disp.hasDisplacement) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
+			if ((instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL || instruction.mnemonic == ZYDIS_MNEMONIC_XOR) && instruction.operands[1].mem.disp.hasDisplacement) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
 				if (instruction.operands[1].mem.disp.value < 0x50) {
 					//printf("has DIPS %p\n", c.Rip);
 					if (instruction.operands[1].mem.disp.value < 0x32) {
@@ -632,9 +632,12 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 							//printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
 							if (!iRev && bShowDisp) {
 								auto pRead = c.Rip - 10;
-								iRev = pRead + 7 + Read<DWORD>(pRead + 3) - dbg.procBase;
-								//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", iRev);
-								rev.pReverse = iRev;
+								auto rRev = pRead + 7 + Read<DWORD>(pRead + 3) - dbg.procBase;
+								if (rRev != rev.pEncrypt) {
+									iRev = rRev;
+									//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", iRev);
+									rev.pReverse = iRev;
+								}
 							}
 						}
 						
@@ -652,9 +655,11 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 				}
 				else if (!iRev && bShowDisp) {
 					DWORD pPtr = c.Rip + 7 + instruction.operands[1].mem.disp.value - dbg.procBase;
-					//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", pPtr);
-					iRev = pPtr;
-					rev.pReverse = iRev;
+					if (pPtr != rev.pEncrypt) {
+						//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", pPtr);
+						iRev = pPtr;
+						rev.pReverse = iRev;
+					}
 				}
 
 			}
