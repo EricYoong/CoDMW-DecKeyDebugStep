@@ -58,7 +58,9 @@ public:
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-04.exe",
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 21-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe"
-			iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe"
+			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe"
+			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe" : 
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 29-04.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -553,7 +555,15 @@ T Read(LPBYTE adr) {
 #include <Zydis/Zydis.h>
 #pragma comment(lib,"Zydis.lib")
 ZydisDecoder decoder;
-DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = false) {
+
+struct FRev {
+	DWORD64 pEncrypt;
+	DWORD64 pReverse;
+	BYTE bXor;
+	DWORD64 keys[16][4];
+};
+
+DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = false) {
 	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
@@ -618,11 +628,13 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 						if (!DISP_VALUE && bPrint && bShowDisp) {
 							bPrint = false;
 							DISP_VALUE = instruction.operands[1].mem.disp.value;
-							printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+							rev.bXor = DISP_VALUE;
+							//printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
 							if (!iRev && bShowDisp) {
 								auto pRead = c.Rip - 10;
 								iRev = pRead + 7 + Read<DWORD>(pRead + 3) - dbg.procBase;
-								printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", iRev);
+								//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", iRev);
+								rev.pReverse = iRev;
 							}
 						}
 						
@@ -640,8 +652,9 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 				}
 				else if (!iRev && bShowDisp) {
 					DWORD pPtr = c.Rip + 7 + instruction.operands[1].mem.disp.value - dbg.procBase;
-					printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", pPtr);
+					//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", pPtr);
 					iRev = pPtr;
+					rev.pReverse = iRev;
 				}
 
 			}
@@ -723,7 +736,8 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 		}
 	}
 
-	bool bGen = true;
+	bool bGen = false;
+	for (DWORD i = 0; i < 4; i++) rev.keys[idx][i] = dwKeys[i];
 	if (bGen) {
 		if (dwKeys[0] == 0) printf("key[%i][0] = LastKey;\n",idx); else printf("key[%i][0] = 0x%p;\n", idx, dwKeys[0]);
 		if (dwKeys[1] == 0) printf("key[%i][1] = LastKey;\n",idx); else 		printf("key[%i][1] = 0x%p;\n", idx, dwKeys[1]);
@@ -731,7 +745,7 @@ DWORD64 DumpFnc(DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp =
 		if (dwKeys[3] == 0) printf("key[%i][3] = LastKey;\n\n", idx); else printf("key[%i][3] = 0x%p;\n\n", idx, dwKeys[3]);
 	}
 	else {
-		printf("%p - keys[%i] = { %p , %p , %p , %p }\n",dwRet, idx,dwKeys[0], dwKeys[1], dwKeys[2], dwKeys[3]);
+		//printf("%p - keys[%i] = { %p , %p , %p , %p }\n",dwRet, idx,dwKeys[0], dwKeys[1], dwKeys[2], dwKeys[3]);
 		//printf("key[%i] = { 0x%p , 0x%p , 0x%p , 0x%p }\n", idx, dwKeys[0], dwKeys[1], dwKeys[2], dwKeys[3]);
 	}
 
@@ -911,7 +925,33 @@ DWORD DoScan(std::string pattern, DWORD offset = 0, DWORD base_offset = 0, DWORD
 	//ret = ret + *(DWORD*)(dwBase + ret + offset) + base_offset;
 	return ret;
 }
+
+void ShowRev(FRev r,const char* szNamespace, bool bSingle = false) {
+
+	printf("namespace %s {\n", szNamespace);
+	printf("const DWORD ENCRYPT_PTR_OFFSET = 0x%X;\n", r.pEncrypt);
+	printf("const DWORD REVERSED_ADDRESS = 0x%X;\n", r.pReverse);
+	printf("const DWORD LAST_KEY_XOR = 0x%02X;\n", r.bXor);
+
+	if (bSingle) {
+		for (DWORD j = 0; j < 4; j++) {
+			printf("const DWORD KEY_%i = 0x%X;\n", j, r.keys[0][j]);
+		}
+	}
+	else {
+		for (DWORD i = 0; i < 16; i++) {
+			for (DWORD j = 0; j < 4; j++) {
+				printf("const DWORD KEY_%i_%i = 0x%X;\n", i, j, r.keys[i][j]);
+			}
+			printf("\n");
+		}
+	}
+
+	printf("}\n");
+}
+
 void Dump() {
+	DWORD64 idxArray = 0;
 
 	dbg.InitProcess();
 	DWORD64 pBase = dbg.procBase;
@@ -920,7 +960,7 @@ void Dump() {
 		dbg.SingleStep();
 		bExcept = false;
 		//aob scan
-		printf("//Bone Dump\n");
+		//printf("//Bone Dump\n");
 		DWORD64 pBoneScan = pBase + DoScan("56 57 48 83 EC ?? 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
 		DWORD64 pSetRdx = pBoneScan;
 		//find lea rdx, ds:[0x00007FF796840000]
@@ -945,19 +985,19 @@ void Dump() {
 				if (instruction.mnemonic == ZYDIS_MNEMONIC_MOVSX) {
 					//printf("found %i\n", instruction.mnemonic);
 					movsx = instruction.operands[1].mem.disp.value;
-					printf("DWORD INDEX_ARRAY_OFFSET = 0x%08X;\n", movsx);
+					idxArray = movsx;
+					//printf("DWORD INDEX_ARRAY_OFFSET = 0x%08X;\n", movsx);
 					//break;
 				}
 				else if (instruction.mnemonic == ZYDIS_MNEMONIC_MOV) {
 					if (instruction.operands[1].mem.disp.value > 0x100) {
 						pEncrypt = pScan + 7 + instruction.operands[1].mem.disp.value - pBase;
-						printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
+						//printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
 					}
 				}
 				pScan += instruction.length;
 			}
 		}
-		printf("#define BONE_BASE_POS 0x%08X\n", Read<DWORD>(pBase + DoScan(("74 0e ?? ?? ?? ?? ?? ?? ?? B8 ?? ?? ?? ?? 74 05 B8")) + 17));
 
 		//now get x and y
 		//find ENCRYPT_PTR_OFFSET 
@@ -967,13 +1007,17 @@ void Dump() {
 
 		DWORD64 pCmpJA = pSetRdx;
 		while (Read<DWORD>(pCmpJA) != 0x0EF98348) pCmpJA++;
-		printf("pBoneBase: %p / %p / %p\n", pBoneScan, pSetRdx, pCmpJA);
+		printf("//pBoneBase: %p / %p / %p\n", pBoneScan, pSetRdx, pCmpJA);
+
+		FRev fRev;
+		fRev.pEncrypt = pEncrypt;
 
 		for (int i = 0; i < 16; i++) {
-			DumpFnc(i, pCmpJA, pSetRdx, i == 0);
+			DumpFnc(fRev,i, pCmpJA, pSetRdx, i == 0);
 		}
+		ShowRev(fRev,"_0x150");
 
-		printf("//Entity Dump\n");
+		//printf("//Entity Dump\n");
 		DWORD64 pEntScan = pBase + DoScan("24 03 75 29") + 0x80;
 
 		pEncrypt = 0;
@@ -990,7 +1034,7 @@ void Dump() {
 					if (instruction.operands[1].mem.disp.value > 0x100) {
 
 						pEncrypt = pScan + 7 + instruction.operands[1].mem.disp.value - pBase;
-						printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
+						//printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
 						break;
 					}
 				}
@@ -1000,40 +1044,46 @@ void Dump() {
 
 		pCmpJA = pEntScan;
 		while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
-		printf("pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
+		printf("//pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
+		fRev.pEncrypt = pEncrypt;
 		for (int i = 0; i < 16; i++) {
-			DumpFnc(i, pCmpJA, 0, i == 0);
+			DumpFnc(fRev,i, pCmpJA, 0, i == 0);
 		}
+		ShowRev(fRev, "Entity_0x358");
 
-		printf("//CMD Dump\n");
 		//CMD
 		//DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89", 0, 0, 0, 3) + 0x1DF;
 		DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89", 0, 0, 0, 3) + 0x1D6;
-		printf("pCmd: %p\n", pCmd);
-		DumpFnc(0, pCmd, 0, true);
+		printf("//CMD Dump %p\n", pCmd);
+		DumpFnc(fRev,0, pCmd, 0, true);
+		ShowRev(fRev, "cmd", true);
 
-		printf("//clientnfo_t Dump\n");
+
 		DWORD64 pClientInfo = pBase + DoScan("0F 29 74 24 20 0F 28 F3 81 FB FF 07 00 00")+0x14;
-		printf("clientnfo_t: %p\n", pClientInfo);
+
+		printf("//clientnfo_t Dump %p\n", pClientInfo);
 		pEncrypt = Read<DWORD>(pClientInfo+3)+pClientInfo+7-pBase;
-		printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
-		DumpFnc(0, pClientInfo, 0, true,true);
+		fRev.pEncrypt = pEncrypt;
+		//printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
+		DumpFnc(fRev,0, pClientInfo, 0, true,true);
+		ShowRev(fRev, "_0x3580", true);
 		//search for imul..
 		
 	}
-
+	printf("#define INDEX_ARRAY_OFFSET 0x%08X\n", idxArray);
+	printf("#define BONE_BASE_POS 0x%08X\n", Read<DWORD>(pBase + DoScan(("74 0e ?? ?? ?? ?? ?? ?? ?? B8 ?? ?? ?? ?? 74 05 B8")) + 17));
 	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("49 03 D8 0F 2F 37 76 6A")) - 4));
 	printf("#define BASE_OFFSET 0x%04X\n", Read<DWORD>(pBase + DoScan(("48 8B 7C 24 40 48 85 C0 74 22")) - 4));
 	//now offsets
 	printf("#define NORECOIL_OFFSET  0x%08X\n", Read<DWORD>(pBase + DoScan(("0F 28 C2 0F 28 CA F3 0F 59 45 00 F3 AA F3 0F 11 45 00")) +0x2E));
-	printf("#define NAME_ARRAY_OFFSET 0x%08X\n", DoScan(("33 F6 48 8B E8 8B DE 85 FF 7E 25"), 3, 7, 0x0B));
+	printf("#define NAME_ARRAY_OFFSET 0x%08X\n", DoScan(("4C 8D 44 24 20 EB 1A 48"), 3, 7, 7));
 
 	auto dwCAM_PTR = DoScan(("F3 0F 11 89 C4 01 00 00 F3 0F 11 91 C8 01 00 00 C6 81 C0 01 00 00 01"), 3, 7, -7);
 	printf("#define CAM_PTR 0x%08X\n", dwCAM_PTR);
-	printf("#define DEFREF_PTR 0x%08X\n", DoScan(("4C 8B 7C 24 68 33 C0 49 89 45 60 41 89 45 68"), 3, 7, 0xF)); //veirfy plz
+	printf("#define DEFREF_PTR 0x%08X\n", DoScan(("48 85 C9 74 1B 8B 41 7C"), 3, 7, -7)); //veirfy plz
 	printf("#define FunctionDisTribute 0x%08X\n", DoScan(("41 0F B7 84 50 00 88 13 00 66 39 41 02"), 3, 7, -7));
-	printf("#define AboutVisibleFunction 0x%08X\n", DoScan(("F3 0F 11 83 1C 01 00 00 83 8B 3C 01 00 00 03 48 89 83 88 00 00 00"),3,7,0x16));
+	printf("#define AboutVisibleFunction 0x%08X\n", DoScan(("F3 0F 11 ?? 1C 01 00 00 83 ?? 3C 01 00 00 03 48 89 ?? 88 00 00 00"),3,7,0x16));
 	//printf("#define decrypt_key_for_bone_base 0x%08X\n", DoScan(("48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00")));
 
 	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x20;
@@ -1044,6 +1094,13 @@ void Dump() {
 	pOff = Read<DWORD>(pCheck + 12);
 	if (pOff > 0x500) pOff = Read<BYTE>(pCheck + 12);
 	printf("#define TYPE_OFFSET 0x%04X\n", pOff);
+
+	//stance?
+	//
+	pCheck = pBase + DoScan("41 8B 54 24 0C 41 8B 4D 0C 3B CA 74 1E");
+	pOff = Read<DWORD>(pCheck - 4);
+	if (pOff > 0x100000)pOff = Read<BYTE>(pCheck - 1);
+	printf("#define LOCAL_INDEX_OFFSET 0x%X\n", pOff);
 
 
 }
@@ -1061,8 +1118,8 @@ int main() {
 	ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
 	printf("Hi!\n");
 
-	Dump();
-	printf("//===========================//\n");
+	//Dump();
+	//printf("//===========================//\n");
 	Dump();
 
 	getchar();
