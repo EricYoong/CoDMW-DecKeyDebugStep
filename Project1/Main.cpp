@@ -935,13 +935,13 @@ void ShowRev(FRev r,const char* szNamespace, bool bSingle = false) {
 
 	if (bSingle) {
 		for (DWORD j = 0; j < 4; j++) {
-			printf("const DWORD KEY_%i = 0x%X;\n", j, r.keys[0][j]);
+			printf("const DWORD64 KEY_%i = 0x%p;\n", j, r.keys[0][j]);
 		}
 	}
 	else {
 		for (DWORD i = 0; i < 16; i++) {
 			for (DWORD j = 0; j < 4; j++) {
-				printf("const DWORD KEY_%i_%i = 0x%X;\n", i, j, r.keys[i][j]);
+				printf("const DWORD64 KEY_%i_%i = 0x%p;\n", i, j, r.keys[i][j]);
 			}
 			printf("\n");
 		}
@@ -1086,8 +1086,8 @@ void Dump() {
 	printf("#define AboutVisibleFunction 0x%08X\n", DoScan(("F3 0F 11 ?? 1C 01 00 00 83 ?? 3C 01 00 00 03 48 89 ?? 88 00 00 00"),3,7,0x16));
 	//printf("#define decrypt_key_for_bone_base 0x%08X\n", DoScan(("48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00")));
 
-	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x20;
-	//DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x26;
+	//DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x20;
+	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x26;
 	DWORD pOff = Read<DWORD>(pCheck + 2);
 	if(pOff > 0x500) pOff = Read<BYTE>(pCheck + 5);
 	printf("#define VALID_OFFSET 0x%04X //%p\n", pOff,pCheck);
