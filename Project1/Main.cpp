@@ -60,7 +60,8 @@ public:
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe"
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe"
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe" : 
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 29-04.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 29-04.exe"
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 03-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -551,6 +552,11 @@ T Read(LPBYTE adr) {
 	ReadProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
 	return t;
 }
+
+template <class T>
+void Write(DWORD64 adr,T t) {
+	WriteProcessMemory(dbg.debuggeehProcess, (LPBYTE)adr, &t, sizeof(T), NULL);
+}
 #include <inttypes.h>
 #include <Zydis/Zydis.h>
 #pragma comment(lib,"Zydis.lib")
@@ -563,11 +569,68 @@ struct FRev {
 	DWORD64 keys[16][4];
 };
 
+DWORD64 GetReg(BYTE bReg, CONTEXT c) {
+	DWORD64 pReg = 0;
+	switch (bReg) {
+	case ZYDIS_REGISTER_RAX:
+		pReg = c.Rax;
+		break;
+	case ZYDIS_REGISTER_RDX:
+		pReg = c.Rdx;
+		break;
+	case ZYDIS_REGISTER_RBX:
+		pReg = c.Rbx;
+		break;
+	case ZYDIS_REGISTER_RCX:
+		pReg = c.Rcx;
+		break;
+	case ZYDIS_REGISTER_RBP:
+		pReg = c.Rbp;
+		break;
+	case ZYDIS_REGISTER_RSI:
+		pReg = c.Rsi;
+		break;
+	case ZYDIS_REGISTER_RDI:
+		pReg = c.Rdi;
+		break;
+	case ZYDIS_REGISTER_R8:
+		pReg = c.R8;
+		break;
+	case ZYDIS_REGISTER_R9:
+		pReg = c.R9;
+		break;
+	case ZYDIS_REGISTER_R10:
+		pReg = c.R10;
+		break;
+	case ZYDIS_REGISTER_R11:
+		pReg = c.R11;
+		break;
+	case ZYDIS_REGISTER_R12:
+		pReg = c.R12;
+		break;
+	case ZYDIS_REGISTER_R13:
+		pReg = c.R13;
+		break;
+	case ZYDIS_REGISTER_R14:
+		pReg = c.R14;
+		break;
+	case ZYDIS_REGISTER_R15:
+		pReg = c.R15;
+		break;
+	default:
+		printf("unk good zydis %i / %p\n", pReg, c.Rip);
+		break;
+	}
+	return pReg;
+}
+
 DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = false) {
 	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
 	c = dbg.GetContext();
+
+	DWORD64 imulExpect = Read<DWORD64>(dbg.procBase + rev.pEncrypt);
 	//find call [fnc ] above  84 C0 74 04 B0 01 EB 02 32 C0 85 DB 74 4C 3B DE 7D 48
 	if (pSetReg) {
 		c.Rip = pSetReg;
@@ -579,9 +642,9 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	}
 	else {
 		//not set reg
-		c.Rax = idx;
+		c.Rcx = idx;
 	}
-	c.Rip =  pCmpJA;
+	c.Rip = pCmpJA;
 	dbg.SetContext(&c);
 	if (!bRdy) {
 		dbg.SingleStep();
@@ -610,6 +673,8 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	DWORD iRev = 0;
 	bool bPrint = true;
 
+	
+	
 	while(iImul<4) {
 		BYTE bRead[20];
 		dbg.ReadTo(c.Rip, bRead, 20);
@@ -623,7 +688,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 		if (bRdy) {
 			if ((instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL || instruction.mnemonic == ZYDIS_MNEMONIC_XOR) && instruction.operands[1].mem.disp.hasDisplacement) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
 				if (instruction.operands[1].mem.disp.value < 0x50) {
-					//printf("has DIPS %p\n", c.Rip);
+					printf("has DIPS %p\n", c.Rip);
 					if (instruction.operands[1].mem.disp.value < 0x32) {
 						if (!DISP_VALUE && bPrint && bShowDisp) {
 							bPrint = false;
@@ -665,6 +730,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 			}
 		}
 		if (bExcept) { //we got an exception? so best to skip for safety
+			printf("got except %p\n", c.Rip);
 			bExcept = false;
 			c = dbg.GetContext();
 			c.Rip += instruction.length; //fnc index
@@ -679,63 +745,25 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 
 		{
 			if (goodDec && instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
+				bool bGoodImul = false;
 				DWORD64 pReg = 0;
-				if (!bLastKey) {
-
-					if (goodDec) {
-						BYTE reg = instruction.operands[1].reg.value;
-						switch (reg) {
-						case ZYDIS_REGISTER_RAX:
-							pReg = c.Rax;
-							break;
-						case ZYDIS_REGISTER_RBX:
-							pReg = c.Rbx;
-							break;
-						case ZYDIS_REGISTER_RCX:
-							pReg = c.Rcx;
-							break;
-						case ZYDIS_REGISTER_RBP:
-							pReg = c.Rbp;
-							break;
-						case ZYDIS_REGISTER_RSI:
-							pReg = c.Rsi;
-							break;
-						case ZYDIS_REGISTER_RDI:
-							pReg = c.Rdi;
-							break;
-						case ZYDIS_REGISTER_R8:
-							pReg = c.R8;
-							break;
-						case ZYDIS_REGISTER_R9:
-							pReg = c.R9;
-							break;
-						case ZYDIS_REGISTER_R10:
-							pReg = c.R10;
-							break;
-						case ZYDIS_REGISTER_R11:
-							pReg = c.R11;
-							break;
-						case ZYDIS_REGISTER_R12:
-							pReg = c.R12;
-							break;
-						case ZYDIS_REGISTER_R13:
-							pReg = c.R13;
-							break;
-						case ZYDIS_REGISTER_R14:
-							pReg = c.R14;
-							break;
-						case ZYDIS_REGISTER_R15:
-							pReg = c.R15;
-							break;
-						default:
-							printf("unk good zydis %i / %p\n", reg,c.Rip);
-							break;
-						}
+				//if (!bLastKey) {
+					DWORD64 reg1 = GetReg(instruction.operands[1].reg.value,c);
+					pReg = reg1;
+					DWORD64 reg0 = GetReg(instruction.operands[0].reg.value, c);
+					//printf("%p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, reg0,reg1,oldRip);
+					if (reg0 == imulExpect) {
+						bGoodImul = true;
 					}
-				}
+				//}
+				if (bGoodImul) {
+					//printf("GOOD %p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, 0, 0, oldRip);
+					dwKeys[iImul++] = pReg;
+					bLastKey = false;
 
-				dwKeys[iImul++] = pReg;
-				bLastKey = false;
+					//calc next
+					//no need, xor is always 0
+				}
 			}
 			//check if imul
 		}
@@ -1052,6 +1080,7 @@ void Dump() {
 		printf("//pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
 		fRev.pEncrypt = pEncrypt;
+		pCmpJA = pBase+0x127D3C8;
 		for (int i = 0; i < 16; i++) {
 			DumpFnc(fRev,i, pCmpJA, 0, i == 0);
 		}
@@ -1060,9 +1089,9 @@ void Dump() {
 		//CMD
 		//DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89", 0, 0, 0, 3) + 0x1DF;
 		DWORD64 pCmd = pBase + DoScan("4C 8B DC 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89", 0, 0, 0, 3) + 0x1D6;
-		printf("//CMD Dump %p\n", pCmd);
-		DumpFnc(fRev,0, pCmd, 0, true);
-		ShowRev(fRev, "cmd", true);
+		//printf("//CMD Dump %p\n", pCmd);
+		//DumpFnc(fRev,0, pCmd, 0, true);
+		//ShowRev(fRev, "cmd", true);
 
 
 		DWORD64 pClientInfo = pBase + DoScan("0F 29 74 24 20 0F 28 F3 81 FB FF 07 00 00")+0x14;
@@ -1092,7 +1121,7 @@ void Dump() {
 	//printf("#define decrypt_key_for_bone_base 0x%08X\n", DoScan(("48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00")));
 
 	//DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x20;
-	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 40 5B C3") - 0x26;
+	DWORD64 pCheck = pBase + DoScan("84 C0 75 08 B0 01 48 83 C4 50 ?? C3") - 0x26;
 	DWORD pOff = Read<DWORD>(pCheck + 2);
 	if(pOff > 0x500) pOff = Read<BYTE>(pCheck + 5);
 	printf("#define VALID_OFFSET 0x%04X //%p\n", pOff,pCheck);
