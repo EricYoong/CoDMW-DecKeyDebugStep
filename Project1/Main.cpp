@@ -625,7 +625,7 @@ DWORD64 GetReg(BYTE bReg, CONTEXT c) {
 	return pReg;
 }
 
-DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = true) {
+DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = false) {
 	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
@@ -684,12 +684,13 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 		bool goodDec = ZYDIS_SUCCESS(ZydisDecoderDecodeBuffer(
 			&decoder, bRead, 20,
 			instructionPointer, &instruction));
-		//printf("%p / %p X has DIPS %i / %p\n",c.Rax, c.Rip,instruction.operands[1].mem.disp.hasDisplacement,instruction.operands[1].mem.disp.value);
+		//printf("%i %p / %p X has DIPS %i / %p\n", bRdy, c.Rax, c.Rip, instruction.operands[1].mem.disp.hasDisplacement, instruction.operands[1].mem.disp.value);
 		if (!goodDec) break;
 
-		if (instruction.mnemonic == ZYDIS_MNEMONIC_JMP) bRdy = true;
-		if (bRdy) {
+		if (!bRdy && instruction.mnemonic == ZYDIS_MNEMONIC_JMP) bRdy = true;
+		else if(bRdy){
 			if ((instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL || instruction.mnemonic == ZYDIS_MNEMONIC_XOR) && instruction.operands[1].mem.disp.hasDisplacement) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
+				 //printf("%i %p / %p X has DIPS %i / %p\n", bRdy,c.Rax, c.Rip, instruction.operands[1].mem.disp.hasDisplacement, instruction.operands[1].mem.disp.value);
 				if (instruction.operands[1].mem.disp.value < 0x50) {
 					//printf("has DIPS %p\n", c.Rip);
 					if (instruction.operands[1].mem.disp.value < 0x32) {
@@ -697,13 +698,13 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 							bPrint = false;
 							DISP_VALUE = instruction.operands[1].mem.disp.value;
 							rev.bXor = DISP_VALUE;
-							//printf("found DISPLACEMENT! %04X\n", DISP_VALUE);
+							//printf("found DISPLACEMENT! %04X //%p\n", DISP_VALUE,c.Rip);
 							if (!iRev && bShowDisp) {
 								auto pRead = c.Rip - 10;
 								auto rRev = pRead + 7 + Read<DWORD>(pRead + 3) - dbg.procBase;
 								if (rRev != rev.pEncrypt) {
 									iRev = rRev;
-									//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", iRev);
+									//printf("DWORD REVERSED_ADDRESS = 0x%08X; //%p\n", iRev,c.Rip);
 									rev.pReverse = iRev;
 								}
 							}
@@ -722,9 +723,10 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					continue;
 				}
 				else if (!iRev && bShowDisp) {
+					
 					DWORD pPtr = c.Rip + 7 + instruction.operands[1].mem.disp.value - dbg.procBase;
 					if (pPtr != rev.pEncrypt) {
-						//printf("DWORD REVERSED_ADDRESS = 0x%08X;\n", pPtr);
+						//printf("DWORD REVERSED_ADDRESS = 0x%08X; //%p\n", pPtr,c.Rip);
 						iRev = pPtr;
 						rev.pReverse = iRev;
 					}
@@ -1110,7 +1112,7 @@ void Dump() {
 	}
 	printf("#define INDEX_ARRAY_OFFSET 0x%08X\n", idxArray);
 	printf("#define BONE_BASE_POS 0x%08X\n", Read<DWORD>(pBase + DoScan(("74 0e ?? ?? ?? ?? ?? ?? ?? B8 ?? ?? ?? ?? 74 05 B8")) + 17));
-	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("49 03 D8 0F 2F 37 76 6A")) - 4));
+	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("?? 03 ?? 0F 2F 37 76 6A")) - 4));
 	printf("#define BASE_OFFSET 0x%04X\n", Read<DWORD>(pBase + DoScan(("48 8B 7C 24 40 48 85 C0 74 22")) - 4));
 	//now offsets
 	printf("#define NORECOIL_OFFSET  0x%08X\n", Read<DWORD>(pBase + DoScan(("0F 28 C2 0F 28 CA F3 0F 59 45 00 F3 AA F3 0F 11 45 00")) +0x2E));
