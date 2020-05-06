@@ -61,7 +61,8 @@ public:
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe"
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe" : 
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 29-04.exe"
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 03-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 03-05.exe"
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 05-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -624,7 +625,7 @@ DWORD64 GetReg(BYTE bReg, CONTEXT c) {
 	return pReg;
 }
 
-DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = false) {
+DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool bShowDisp = false,bool bRdy = true) {
 	DWORD DISP_VALUE = 0;
 	DWORD64 dwRet = 0;
 	CONTEXT c;
@@ -635,6 +636,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	if (pSetReg) {
 		c.Rip = pSetReg;
 		c.Rcx = idx; //fnc index
+		c.R8 = 0;
 		dbg.SetContext(&c);
 
 		dbg.SingleStep();
@@ -642,6 +644,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	}
 	else {
 		//not set reg
+		c.Rdx = 0;
 		c.Rcx = idx;
 	}
 	c.Rip = pCmpJA;
@@ -688,7 +691,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 		if (bRdy) {
 			if ((instruction.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.mnemonic == ZYDIS_MNEMONIC_IMUL || instruction.mnemonic == ZYDIS_MNEMONIC_XOR) && instruction.operands[1].mem.disp.hasDisplacement) {//&& instruction.operands[1].mem.disp.value == DISP_VALUE) {
 				if (instruction.operands[1].mem.disp.value < 0x50) {
-					printf("has DIPS %p\n", c.Rip);
+					//printf("has DIPS %p\n", c.Rip);
 					if (instruction.operands[1].mem.disp.value < 0x32) {
 						if (!DISP_VALUE && bPrint && bShowDisp) {
 							bPrint = false;
@@ -1080,7 +1083,7 @@ void Dump() {
 		printf("//pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
 		fRev.pEncrypt = pEncrypt;
-		pCmpJA = pBase+0x127D3C8;
+		pCmpJA = pBase+0x1047FEB;
 		for (int i = 0; i < 16; i++) {
 			DumpFnc(fRev,i, pCmpJA, 0, i == 0);
 		}
