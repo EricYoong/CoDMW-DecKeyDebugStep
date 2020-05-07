@@ -62,7 +62,8 @@ public:
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe" : 
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 29-04.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 03-05.exe"
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 05-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 05-05.exe"
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 07-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -644,7 +645,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	}
 	else {
 		//not set reg
-		c.Rdx = 0;
+		c.Rdi = 0;
 		c.Rcx = idx;
 	}
 	c.Rip = pCmpJA;
@@ -716,6 +717,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					c = dbg.GetContext();
 					c.Rip += instruction.length; //fnc index
 					if (instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
+						//printf("isImul %i\n", iImul);
 						bLastKey = false;
 						iImul++;//skip lastKey
 					}
@@ -762,10 +764,10 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					}
 				//}
 				if (bGoodImul) {
-					//printf("GOOD %p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, 0, 0, oldRip);
+					//printf("GOOD %p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, pReg, 0, oldRip);
 					dwKeys[iImul++] = pReg;
 					bLastKey = false;
-
+					if (iImul >= 4)break;
 					//calc next
 					//no need, xor is always 0
 				}
@@ -1085,7 +1087,7 @@ void Dump() {
 		printf("//pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
 		fRev.pEncrypt = pEncrypt;
-		pCmpJA = pBase+0x1047FEB;
+		pCmpJA = pBase+0x242E059;
 		for (int i = 0; i < 16; i++) {
 			DumpFnc(fRev,i, pCmpJA, 0, i == 0);
 		}
