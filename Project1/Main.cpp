@@ -63,7 +63,8 @@ public:
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 29-04.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 03-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 05-05.exe"
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 07-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 07-05.exe"
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 09-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -637,7 +638,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	if (pSetReg) {
 		c.Rip = pSetReg;
 		c.Rcx = idx; //fnc index
-		c.R8 = 0;
+		c.Rdx = 0;
 		dbg.SetContext(&c);
 
 		dbg.SingleStep();
@@ -645,7 +646,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	}
 	else {
 		//not set reg
-		c.Rdi = 0;
+		c.R8 = 0;
 		c.Rcx = idx;
 	}
 	c.Rip = pCmpJA;
@@ -677,7 +678,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	DWORD iRev = 0;
 	bool bPrint = true;
 
-	
+	bool bDoneLast = false;
 	
 	while(iImul<4) {
 		BYTE bRead[20];
@@ -694,12 +695,14 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 				 //printf("%i %p / %p X has DIPS %i / %p\n", bRdy,c.Rax, c.Rip, instruction.operands[1].mem.disp.hasDisplacement, instruction.operands[1].mem.disp.value);
 				if (instruction.operands[1].mem.disp.value < 0x50) {
 					//printf("has DIPS %p\n", c.Rip);
+					bool bFoundDisp = false;
 					if (instruction.operands[1].mem.disp.value < 0x32) {
 						if (!DISP_VALUE && bPrint && bShowDisp) {
 							bPrint = false;
 							DISP_VALUE = instruction.operands[1].mem.disp.value;
 							rev.bXor = DISP_VALUE;
 							//printf("found DISPLACEMENT! %04X //%p\n", DISP_VALUE,c.Rip);
+							bFoundDisp = true;
 							if (!iRev && bShowDisp) {
 								auto pRead = c.Rip - 10;
 								auto rRev = pRead + 7 + Read<DWORD>(pRead + 3) - dbg.procBase;
@@ -716,9 +719,10 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					//skip
 					c = dbg.GetContext();
 					c.Rip += instruction.length; //fnc index
-					if (instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
-						//printf("isImul %i\n", iImul);
+					if (!bDoneLast && bLastKey && instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
+						printf("isImul %i\n", iImul);
 						bLastKey = false;
+						bDoneLast = true;
 						iImul++;//skip lastKey
 					}
 					dbg.SetContext(&c);
@@ -734,10 +738,15 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					}
 				}
 
+			} else if (!bDoneLast && bLastKey && instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
+				printf("isImul %i\n", iImul);
+				bLastKey = false;
+				bDoneLast = true;
+				iImul++;//skip lastKey
 			}
 		}
 		if (bExcept) { //we got an exception? so best to skip for safety
-			printf("got except %p\n", c.Rip);
+			//printf("got except %p\n", c.Rip);
 			bExcept = false;
 			c = dbg.GetContext();
 			c.Rip += instruction.length; //fnc index
@@ -758,13 +767,15 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					DWORD64 reg1 = GetReg(instruction.operands[1].reg.value,c);
 					pReg = reg1;
 					DWORD64 reg0 = GetReg(instruction.operands[0].reg.value, c);
-					//printf("%p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, reg0,reg1,oldRip);
+
 					if (reg0 == imulExpect) {
 						bGoodImul = true;
 					}
+					if (reg0 == reg1)bGoodImul = false;
 				//}
-				if (bGoodImul) {
-					//printf("GOOD %p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, pReg, 0, oldRip);
+					if (bGoodImul) {
+						printf("%p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, reg0, reg1, oldRip);
+					printf("GOOD %p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, pReg, 0, oldRip);
 					dwKeys[iImul++] = pReg;
 					bLastKey = false;
 					if (iImul >= 4)break;
@@ -1051,9 +1062,10 @@ void Dump() {
 
 		FRev fRev;
 		fRev.pEncrypt = pEncrypt;
-
+		//pCmpJA = pBase+0x171AC0A;
 		for (int i = 0; i < 16; i++) {
 			DumpFnc(fRev,i, pCmpJA, pSetRdx, i == 0);
+			printf("done dec\n");
 		}
 		ShowRev(fRev,"_0x150");
 
@@ -1084,10 +1096,10 @@ void Dump() {
 
 		pCmpJA = pEntScan;
 		while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
+		pCmpJA = pBase + 0x16C7C30;
 		printf("//pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
 		fRev.pEncrypt = pEncrypt;
-		pCmpJA = pBase+0x242E059;
 		for (int i = 0; i < 16; i++) {
 			DumpFnc(fRev,i, pCmpJA, 0, i == 0);
 		}
