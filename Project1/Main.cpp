@@ -64,7 +64,11 @@ public:
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 03-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 05-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 07-05.exe"
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 09-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 09-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 12-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 14-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 16-05.exe"
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 19-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -638,7 +642,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	if (pSetReg) {
 		c.Rip = pSetReg;
 		c.Rcx = idx; //fnc index
-		c.Rdx = 0;
+		c.R8 = 0;
 		dbg.SetContext(&c);
 
 		dbg.SingleStep();
@@ -646,8 +650,10 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	}
 	else {
 		//not set reg
-		c.R8 = 0;
-		c.Rcx = idx;
+		c.Rax = 0;
+		c.Rdx = idx;
+		//c.Rdx = dbg.procBase;
+		printf("set idx %i\n", idx);
 	}
 	c.Rip = pCmpJA;
 	dbg.SetContext(&c);
@@ -720,7 +726,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					c = dbg.GetContext();
 					c.Rip += instruction.length; //fnc index
 					if (!bDoneLast && bLastKey && instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
-						printf("isImul %i\n", iImul);
+						//printf("isImul %i\n", iImul);
 						bLastKey = false;
 						bDoneLast = true;
 						iImul++;//skip lastKey
@@ -774,8 +780,8 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 					if (reg0 == reg1)bGoodImul = false;
 				//}
 					if (bGoodImul) {
-						printf("%p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, reg0, reg1, oldRip);
-					printf("GOOD %p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, pReg, 0, oldRip);
+						//printf("%p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, reg0, reg1, oldRip);
+					//printf("GOOD %p %i-%i imul / { %p / %p } %p\n", imulExpect, idx, iImul, pReg, 0, oldRip);
 					dwKeys[iImul++] = pReg;
 					bLastKey = false;
 					if (iImul >= 4)break;
@@ -1012,7 +1018,8 @@ void Dump() {
 		bExcept = false;
 		//aob scan
 		//printf("//Bone Dump\n");
-		DWORD64 pBoneScan = pBase + DoScan("56 57 48 83 EC ?? 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
+		DWORD64 pBoneScan = pBase + DoScan("56 57 48 83 EC ?? 80 BA ?? 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
+		//find call above 84 C0 74 04 B0 01 EB 02 32 C0 85 DB 74 4C
 		DWORD64 pSetRdx = pBoneScan;
 		//find lea rdx, ds:[0x00007FF796840000]
 		while (Read<DWORD>(pSetRdx) != 0x840FC084)
@@ -1065,12 +1072,14 @@ void Dump() {
 		//pCmpJA = pBase+0x171AC0A;
 		for (int i = 0; i < 16; i++) {
 			DumpFnc(fRev,i, pCmpJA, pSetRdx, i == 0);
-			printf("done dec\n");
+			//printf("done dec\n");
 		}
 		ShowRev(fRev,"_0x150");
 
 		//printf("//Entity Dump\n");
 		DWORD64 pEntScan = pBase + DoScan("24 03 75 29") + 0x80;
+
+		//now use D3 00 00 00 0F 84 ?? ?? ?? ?? ?? ?? ?? D5
 
 		pEncrypt = 0;
 		//lets use zydis
@@ -1096,7 +1105,7 @@ void Dump() {
 
 		pCmpJA = pEntScan;
 		while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
-		pCmpJA = pBase + 0x16C7C30;
+		pCmpJA = pBase + 0x23DD487;
 		printf("//pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
 		fRev.pEncrypt = pEncrypt;
