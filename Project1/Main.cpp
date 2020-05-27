@@ -68,7 +68,10 @@ public:
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 12-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 14-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 16-05.exe"
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 19-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 19-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 22-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 26-05.exe"
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -1103,9 +1106,9 @@ void Dump() {
 			}
 		}
 
-		pCmpJA = pEntScan;
-		while (Read<DWORD>(pCmpJA) != 0x0EF88348) pCmpJA++;
-		pCmpJA = pBase + 0x23DD487;
+		pCmpJA = pBase + DoScan("D3 00 00 00 0F 84 ?? ?? ?? ?? ?? ?? ?? D5");
+		while (Read<DWORD>(pCmpJA) != 0x0EFA8348) pCmpJA++;
+		//pCmpJA = pBase + 0x23E03C7;
 		printf("//pEntScan: %p / %p / %p\n", pEntScan, 0, pCmpJA);
 
 		fRev.pEncrypt = pEncrypt;
@@ -1141,9 +1144,9 @@ void Dump() {
 	printf("#define NORECOIL_OFFSET  0x%08X\n", Read<DWORD>(pBase + DoScan(("0F 28 C2 0F 28 CA F3 0F 59 45 00 F3 AA F3 0F 11 45 00")) +0x2E));
 	printf("#define NAME_ARRAY_OFFSET 0x%08X\n", DoScan(("4C 8D 44 24 20 EB 1A 48"), 3, 7, 7));
 
-	auto dwCAM_PTR = DoScan(("F3 0F 11 89 C4 01 00 00 F3 0F 11 91 C8 01 00 00 C6 81 C0 01 00 00 01"), 3, 7, -7);
+	auto dwCAM_PTR = DoScan(("49 69 D7 60 0D 00 00 41 B8 10 00 00 00 49 8B CC"), 3, 7, 0x18);
 	printf("#define CAM_PTR 0x%08X\n", dwCAM_PTR);
-	printf("#define DEFREF_PTR 0x%08X\n", DoScan(("48 85 C9 74 1B 8B 41 7C"), 3, 7, -7)); //veirfy plz
+	printf("#define DEFREF_PTR 0x%08X\n", DoScan(("F3 0F 10 73 18 8D 4A 02"), 3, 7, -7)-8); //veirfy plz
 	printf("#define FunctionDisTribute 0x%08X\n", DoScan(("41 0F B7 84 50 00 88 13 00 66 39 41 02"), 3, 7, -7));
 	printf("#define AboutVisibleFunction 0x%08X\n", DoScan(("F3 0F 11 ?? 1C 01 00 00 83 ?? 3C 01 00 00 03 48 89 ?? 88 00 00 00"),3,7,0x16));
 	//printf("#define decrypt_key_for_bone_base 0x%08X\n", DoScan(("48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00")));
