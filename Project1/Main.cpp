@@ -55,6 +55,7 @@ public:
 
 		if (CreateProcessA(
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-04.exe",
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 21-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe"
@@ -71,7 +72,17 @@ public:
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 19-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 22-05.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 26-05.exe"
-			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 31-05.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 04-06.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 06-06.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 09-06.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 11-06.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-06.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 17-06.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 19-06.exe"
+			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 22-06.exe"
+			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 30-06.exe"
 			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			,NULL,
 			NULL,
@@ -475,7 +486,7 @@ public:
 		case 0xC0000005:
 			debuggeeStatus = DebuggeeStatus::INTERRUPTED;
 			bExcept = true;
-			printf("%p - access violation!!!\n", pInfo->ExceptionRecord.ExceptionAddress);
+			printf("//%p - access violation!!!\n", pInfo->ExceptionRecord.ExceptionAddress);
 			return false;//
 			break;
 		}
@@ -640,7 +651,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 	CONTEXT c;
 	c = dbg.GetContext();
 
-	DWORD64 imulExpect = Read<DWORD64>(dbg.procBase + rev.pEncrypt);
+	DWORD64 imulExpect = 0;// Read<DWORD64>(dbg.procBase + rev.pEncrypt);
 	//find call [fnc ] above  84 C0 74 04 B0 01 EB 02 32 C0 85 DB 74 4C 3B DE 7D 48
 	if (pSetReg) {
 		c.Rip = pSetReg;
@@ -656,7 +667,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 		c.Rax = 0;
 		c.Rdx = idx;
 		//c.Rdx = dbg.procBase;
-		printf("set idx %i\n", idx);
+		//printf("set idx %i\n", idx);
 	}
 	c.Rip = pCmpJA;
 	dbg.SetContext(&c);
@@ -717,7 +728,7 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 								auto rRev = pRead + 7 + Read<DWORD>(pRead + 3) - dbg.procBase;
 								if (rRev != rev.pEncrypt) {
 									iRev = rRev;
-									//printf("DWORD REVERSED_ADDRESS = 0x%08X; //%p\n", iRev,c.Rip);
+									//printf("A DWORD REVERSED_ADDRESS = 0x%08X; //%p\n", iRev,c.Rip);
 									rev.pReverse = iRev;
 								}
 							}
@@ -740,15 +751,15 @@ DWORD64 DumpFnc(FRev &rev,DWORD idx, DWORD64 pCmpJA, DWORD64 pSetReg = 0, bool b
 				else if (!iRev && bShowDisp) {
 					
 					DWORD pPtr = c.Rip + 7 + instruction.operands[1].mem.disp.value - dbg.procBase;
-					if (pPtr != rev.pEncrypt) {
-						//printf("DWORD REVERSED_ADDRESS = 0x%08X; //%p\n", pPtr,c.Rip);
+					if (pPtr != rev.pEncrypt && instruction.length == 7) {
+						//printf("B DWORD REVERSED_ADDRESS = 0x%08X; //%p / %i\n", pPtr,c.Rip,instruction.length);
 						iRev = pPtr;
 						rev.pReverse = iRev;
 					}
 				}
 
 			} else if (!bDoneLast && bLastKey && instruction.mnemonic == ZYDIS_MNEMONIC_IMUL) {
-				printf("isImul %i\n", iImul);
+				//printf("isImul %i\n", iImul);
 				bLastKey = false;
 				bDoneLast = true;
 				iImul++;//skip lastKey
@@ -1021,7 +1032,7 @@ void Dump() {
 		bExcept = false;
 		//aob scan
 		//printf("//Bone Dump\n");
-		DWORD64 pBoneScan = pBase + DoScan("56 57 48 83 EC ?? 80 BA ?? 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
+		DWORD64 pBoneScan = pBase + DoScan("56 57 48 83 EC ?? 80 BA ?? ?? 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00");
 		//find call above 84 C0 74 04 B0 01 EB 02 32 C0 85 DB 74 4C
 		DWORD64 pSetRdx = pBoneScan;
 		//find lea rdx, ds:[0x00007FF796840000]
@@ -1125,20 +1136,33 @@ void Dump() {
 		//ShowRev(fRev, "cmd", true);
 
 
-		DWORD64 pClientInfo = pBase + DoScan("0F 29 74 24 20 0F 28 F3 81 FB FF 07 00 00")+0x14;
+		DWORD64 pClientInfo = 0;// pBase + DoScan("0F 29 74 24 20 0F 28 F3 81 FB FF 07 00 00") + 0x14;
+		DWORD64 pscan2 = pBase + DoScan("48 8B 01 FF 90 40 01 00 00 4C 8B C5 48 8B D6 49 8B CE")+0x12;
+		pscan2 = pscan2 + Read<int>(pscan2 + 1) + 5;
+		pscan2 += 0x57;
+		pClientInfo = pscan2;//
+		pEncrypt = Read<DWORD>(pscan2 + 3) + pscan2 + 7- pBase;
+		printf("pscan2: %p / %p\n", pscan2, pEncrypt);
 
 		printf("//clientnfo_t Dump %p\n", pClientInfo);
-		pEncrypt = Read<DWORD>(pClientInfo+3)+pClientInfo+7-pBase;
+		//pEncrypt = Read<DWORD>(pClientInfo+3)+pClientInfo+7-pBase;
 		fRev.pEncrypt = pEncrypt;
 		//printf("DWORD ENCRYPT_PTR_OFFSET = 0x%08X;\n", pEncrypt);
 		DumpFnc(fRev,0, pClientInfo, 0, true,true);
 		ShowRev(fRev, "_0x3580", true);
 		//search for imul..
-		
+
+
+		pCmpJA = pBase + 0x1567F5D;
+		fRev.pEncrypt = 0;
+		for (int i = 0; i < 16; i++) {
+			DumpFnc(fRev, i, pCmpJA, pBase+0x1567F5D, i == 0);
+		}
+		ShowRev(fRev, "BASE_DEC");
 	}
 	printf("#define INDEX_ARRAY_OFFSET 0x%08X\n", idxArray);
 	printf("#define BONE_BASE_POS 0x%08X\n", Read<DWORD>(pBase + DoScan(("74 0e ?? ?? ?? ?? ?? ?? ?? B8 ?? ?? ?? ?? 74 05 B8")) + 17));
-	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("?? 03 ?? 0F 2F 37 76 6A")) - 4));
+	printf("#define clientinfo_t_size 0x%04X\n", Read<DWORD>(pBase + DoScan(("?? 03 ?? 0F 2F 37 76")) - 4));
 	printf("#define BASE_OFFSET 0x%04X\n", Read<DWORD>(pBase + DoScan(("48 8B 7C 24 40 48 85 C0 74 22")) - 4));
 	//now offsets
 	printf("#define NORECOIL_OFFSET  0x%08X\n", Read<DWORD>(pBase + DoScan(("0F 28 C2 0F 28 CA F3 0F 59 45 00 F3 AA F3 0F 11 45 00")) +0x2E));
@@ -1147,7 +1171,7 @@ void Dump() {
 	auto dwCAM_PTR = DoScan(("49 69 D7 60 0D 00 00 41 B8 10 00 00 00 49 8B CC"), 3, 7, 0x18);
 	printf("#define CAM_PTR 0x%08X\n", dwCAM_PTR);
 	printf("#define DEFREF_PTR 0x%08X\n", DoScan(("F3 0F 10 73 18 8D 4A 02"), 3, 7, -7)-8); //veirfy plz
-	printf("#define FunctionDisTribute 0x%08X\n", DoScan(("41 0F B7 84 50 00 88 13 00 66 39 41 02"), 3, 7, -7));
+	printf("#define FunctionDisTribute 0x%08X\n", DoScan(("41 0F B7 84 50 00 ?? ?? 00 66 39 41 02"), 3, 7, -7));
 	printf("#define AboutVisibleFunction 0x%08X\n", DoScan(("F3 0F 11 ?? 1C 01 00 00 83 ?? 3C 01 00 00 03 48 89 ?? 88 00 00 00"),3,7,0x16));
 	//printf("#define decrypt_key_for_bone_base 0x%08X\n", DoScan(("48 89 54 24 10 53 55 56 57 48 83 EC 38 80 BA 2C 0A 00 00 00 48 8B EA 65 4C 8B 04 25 58 00 00 00")));
 
@@ -1162,7 +1186,7 @@ void Dump() {
 
 	//stance?
 	//
-	pCheck = pBase + DoScan("41 8B 54 24 0C 41 8B 4D 0C 3B CA 74 1E");
+	pCheck = pBase + DoScan("41 8B 54 24 0C 41 8B 4D 0C 3B CA 74");
 	pOff = Read<DWORD>(pCheck - 4);
 	if (pOff > 0x100000)pOff = Read<BYTE>(pCheck - 1);
 	printf("#define LOCAL_INDEX_OFFSET 0x%X\n", pOff);
