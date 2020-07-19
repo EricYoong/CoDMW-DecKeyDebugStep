@@ -54,42 +54,7 @@ public:
 		unsigned int creationflags = DEBUG_ONLY_THIS_PROCESS | CREATE_SUSPENDED | CREATE_NEW_CONSOLE;
 
 		if (CreateProcessA(
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-04.exe",
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-04.exe",
-			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 21-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
-			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe"
-			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 25-04.exe" : "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe"
-			//iInit++ == 0 ? "C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-04.exe" : 
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 29-04.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 03-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 05-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 07-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 09-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 12-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 14-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 16-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 19-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 22-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 26-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 27-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 31-05.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 04-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 06-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 09-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 11-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 17-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 19-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 22-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 30-06.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 02-07.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 06-07.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 08-07.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 13-07.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 15-07.exe"
 			"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 18-07.exe"
-			//"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 23-04.exe"
 			, NULL,
 			NULL,
 			NULL,
@@ -747,8 +712,83 @@ public:
 	}
 } regTracker;
 
+
 std::string resolve_op(ZydisDecodedInstruction inst) {
 	return std::string();
+	ZydisRegister r1 = inst.operands[0].reg.value;
+	ZydisRegister r2 = inst.operands[1].reg.value;
+	bool valid = false;
+	std::string ret;
+
+
+	std::string s1 = ZydisRegisterGetString(r1);
+	std::string alias = regTracker.get_alias(r1);
+	if (!alias.empty()) {
+		valid = true;
+		s1 = alias;
+	}
+
+	ret = s1;
+	switch (inst.mnemonic) {
+	case ZYDIS_MNEMONIC_MOV:
+		ret += +" = ";
+		break;
+	case ZYDIS_MNEMONIC_ADD:
+		ret += +" += ";
+		break;
+	case ZYDIS_MNEMONIC_SUB:
+		ret += +" -= ";
+		break;
+	case ZYDIS_MNEMONIC_XOR:
+		ret += +" ^= ";
+		break;
+	case ZYDIS_MNEMONIC_IMUL:
+		ret += +" *= ";
+		break;
+	default:
+		ret += " ??? ";
+		break;
+	}
+	bool is_alias = r2 == ZYDIS_REGISTER_NONE;
+	std::string s2 = ZydisRegisterGetString(r2);
+	alias = regTracker.get_alias(r2);
+	if (!alias.empty()) {
+		valid = true;
+		s2 = alias;
+		is_alias = true;
+	}
+
+	if (valid && inst.mnemonic == ZYDIS_MNEMONIC_MOV && r2 == ZYDIS_REGISTER_NONE) {
+		auto r_mem = inst.operands[1].mem.base;
+		auto disp = inst.operands[1].mem.disp.value;
+		//printf("opC: %i / %i\n", inst.operandCount, inst.operands[0].reg.value);
+
+		std::string mem_reg = regTracker.track(r_mem);
+		char buf[32];
+		sprintf_s(buf, 32, "[%s + 0x%02X]: ", mem_reg.c_str(), disp);
+		s2 = buf;
+		//__debugbreak();
+	}
+
+	if (inst.mnemonic == ZYDIS_MNEMONIC_IMUL && inst.operandCount == 4) {
+		//get reg3
+		auto alias = regTracker.get_alias(inst.operands[1].reg.value);
+		if (alias.empty()) alias = ZydisRegisterGetString(inst.operands[1].reg.value);
+		char buf[32];
+		sprintf_s(buf, 32, "%s * %i", alias.c_str(), inst.operands[2].imm.value);
+		s2 = buf;
+	}
+
+
+	ret += s2;
+
+	if (!is_alias) {
+		//now resolve s2
+		ret += " //(" + regTracker.track(r2) + ")";
+	}
+
+
+	return valid ? ret : std::string();
 }
 
 void StepOver() {
