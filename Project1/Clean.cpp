@@ -706,7 +706,11 @@ public:
 
 		}
 
-		if (ret.empty() && !alias.empty()) return alias;
+		if (ret.empty()) {
+			if(!alias.empty()) return alias;
+			//return register
+			return ZydisRegisterGetString(r);
+		}
 		//if (!ret.empty()) printf("%i track: %s / %p\n",idx, ret.c_str(),pRip);
 		return ret;
 	}
@@ -853,7 +857,7 @@ void DumpDecFnc() {
 	regTracker.mainReg = ZYDIS_REGISTER_RAX;
 	regTracker.register_alias[ZYDIS_REGISTER_RAX] = "ret_val";
 	regTracker.register_alias[ZYDIS_REGISTER_R10] = "not_peb";
-	regTracker.register_alias[ZYDIS_REGISTER_R11] = "bswap_val";
+	//regTracker.register_alias[ZYDIS_REGISTER_R11] = "bswap_val";
 
 	bool bFirst = true;
 	while (1) {
