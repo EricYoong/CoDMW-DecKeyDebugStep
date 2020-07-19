@@ -714,7 +714,6 @@ public:
 
 
 std::string resolve_op(ZydisDecodedInstruction inst) {
-	return std::string();
 	ZydisRegister r1 = inst.operands[0].reg.value;
 	ZydisRegister r2 = inst.operands[1].reg.value;
 	bool valid = false;
