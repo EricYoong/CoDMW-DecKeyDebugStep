@@ -46,8 +46,29 @@ public:
 	DWORD debuggeethreadID;
 
 	DWORD64 procBase;
+	bool AttachProcess(DWORD pid) {
+
+		auto r = DebugActiveProcess(pid);
+		if (r) {
+			
+			debuggeeStatus = DebuggeeStatus::SUSPENDED;
+
+			debuggeeprocessID = pid;
+			debuggeehThread = 0;
+				/*debuggeehProcess = processinfo.hProcess;
+				debuggeehThread = processinfo.hThread;
+				debuggeeprocessID = processinfo.dwProcessId;
+				debuggeethreadID = processinfo.dwThreadId;
+
+				auto c = dbg.GetContext();
+				procBase = dbg.Read <DWORD64>(c.Rdx + 0x10);*/
+
+				debuggeeStatus = DebuggeeStatus::SUSPENDED;
+			printf("T[%i] P[%04X] Process launched and suspended. [%p]\n", debuggeethreadID, debuggeeprocessID, procBase);
+		}
+		return r;
+	}
 	void InitProcess() {
-		static int iInit = 0;
 		STARTUPINFOA startupinfo = { 0 };
 		startupinfo.cb = sizeof(startupinfo);
 		PROCESS_INFORMATION processinfo = { 0 };
@@ -101,6 +122,7 @@ public:
 		SetContext(&c);
 	}
 	void Run() {
+		//printf("rstate: %i\n", debuggeeStatus);
 		if (debuggeeStatus == DebuggeeStatus::NONE)
 		{
 			//std::cout << "Debuggee is not started yet." << std::endl;
@@ -118,8 +140,10 @@ public:
 		}
 
 		DEBUG_EVENT debugEvent;
+		//printf("wait dbg!\n");
 		while (WaitForDebugEvent(&debugEvent, INFINITE) == TRUE)
 		{
+			//printf("got dbg! %i\n",debugEvent.dwDebugEventCode);
 			debuggeeprocessID = debugEvent.dwProcessId;
 			debuggeethreadID = debugEvent.dwThreadId;
 			if (DispatchDebugEvent(debugEvent) == TRUE)
@@ -159,6 +183,10 @@ public:
 	}
 	bool OnProcessCreated(const CREATE_PROCESS_DEBUG_INFO* pInfo)
 	{
+		debuggeehProcess = pInfo->hProcess;
+		debuggeehThread = pInfo->hThread;
+		printf("%p / %p\n", debuggeehProcess, debuggeehThread);
+		procBase = (DWORD64)pInfo->lpBaseOfImage;
 		std::cout << "Debuggee created." << std::endl;
 
 		this->resetBreakPointHandler();
@@ -486,6 +514,8 @@ public:
 		{
 		case CREATE_PROCESS_DEBUG_EVENT:
 			OnProcessCreated(&debugEvent.u.CreateProcessInfo);
+			setCPUTrapFlag();
+			FLAG.isBeingSingleInstruction = true;
 			return true;
 		case CREATE_THREAD_DEBUG_EVENT:
 			//printf("Thread created!\n");
