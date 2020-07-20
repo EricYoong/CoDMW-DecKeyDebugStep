@@ -642,19 +642,26 @@ public:
 						}
 						else {
 							//check if its register, if so check alias
-							if (inst->operands[1].reg.value == ZYDIS_REGISTER_NONE) {
-
+							if (inst->operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) {
+								ret = track(inst->operands[1].mem.base, it->idx);
+							} else if (inst->operands[1].reg.value == ZYDIS_REGISTER_NONE) {
 								sprintf_s(buf, 32, "0x%p", inst->operands[1].imm.value);
-
-
 
 								ret += buf;
 							}
 							else {
 								//look for alias..
-								auto alias = get_alias(inst->operands[1].reg.value);
-								if (!alias.empty()) ret = alias;
-								else ret = ZydisRegisterGetString(inst->operands[1].reg.value);
+								//track this
+								auto t = std::string();// (inst->operands[1].reg.value, it->idx);
+								if (t.empty()) {
+
+									auto alias = get_alias(inst->operands[1].reg.value);
+									if (!alias.empty()) ret = alias;
+									else ret = ZydisRegisterGetString(inst->operands[1].reg.value);
+								}
+								else {
+									ret = t;
+								}
 
 							}
 						}
@@ -687,12 +694,12 @@ public:
 					else if (inst->mnemonic == ZYDIS_MNEMONIC_ADD) {
 						auto r0_track = track(inst->operands[0].reg.value, it->idx);
 						auto r1_track = track(inst->operands[1].reg.value, it->idx);
-						ret += r0_track + " + " + r1_track;
+						ret += "(" + r0_track + " + " + r1_track + ")";
 					}
 					else if (inst->mnemonic == ZYDIS_MNEMONIC_SUB) {
 						auto r0_track = track(inst->operands[0].reg.value, it->idx);
 						auto r1_track = track(inst->operands[1].reg.value, it->idx);
-						ret += r0_track + " - " + r1_track;
+						ret += "(" + r0_track + " - " + r1_track + ")";
 					}
 					else if (inst->mnemonic == ZYDIS_MNEMONIC_SHR) {
 						auto r0_track = track(inst->operands[0].reg.value, it->idx);
@@ -844,19 +851,20 @@ void StepOver() {
 }
 
 void DumpDecFnc() {
-	DWORD64 pSetReg = dbg.procBase + 0x00147F69E;// +DoScan("0F B6 4C 24 40 48 C1 C9 0C 83 E1 0F 48 83 F9 0E") + 0x0C;
+	DWORD64 pSetReg = dbg.procBase + 0x1470565;// +DoScan("0F B6 4C 24 40 48 C1 C9 0C 83 E1 0F 48 83 F9 0E") + 0x0C;
 	printf("//==================== DUMP ClientInfo_Base! =======================//\n");
 	//DumpDecFnc2(pSetReg);
 	//start stepping..
 
 	CONTEXT c = dbg.GetContext();
 	c.Rip = pSetReg;
-	c.Rcx = 0; //fnc index
+	c.Rcx = dbg.procBase;
+	c.Rax = 0; //fnc index
 	dbg.SetContext(&c);
 
-	regTracker.mainReg = ZYDIS_REGISTER_RAX;
-	regTracker.register_alias[ZYDIS_REGISTER_RAX] = "ret_val";
-	regTracker.register_alias[ZYDIS_REGISTER_R10] = "not_peb";
+	regTracker.mainReg = ZYDIS_REGISTER_RDX;
+	regTracker.register_alias[ZYDIS_REGISTER_RDX] = "ret_val";
+	regTracker.register_alias[ZYDIS_REGISTER_R11] = "not_peb";
 	//regTracker.register_alias[ZYDIS_REGISTER_R11] = "bswap_val";
 
 	bool bFirst = true;
@@ -868,25 +876,98 @@ void DumpDecFnc() {
 				StepOver();
 			}
 			//solve rax
-			auto r = regTracker.track(ZYDIS_REGISTER_RAX, CRegisterFrame::c_idx);
+			auto r = regTracker.track(regTracker.mainReg, CRegisterFrame::c_idx);
 			printf("FINAL_DEC: %s\n", r.c_str());
 		}
 		Sleep(100);
 	}
 }
+#define MAX_PROCESSES 1024
+
+#include <vector>
+#undef UNICODE
+#include <TlHelp32.h>
+DWORD nMinThreads = 0;
+static std::vector<uint64_t> GetProcessIdsByName(std::string name)
+{
+	std::vector<uint64_t> res;
+	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+	if (!snap) throw std::exception("CreateToolhelp32Snapshot failed");
+	PROCESSENTRY32 entry;
+	entry.dwSize = sizeof(entry);
+	if (!Process32First(snap, &entry)) throw std::exception("Process32First failed");
+	do
+	{
+		if (!_stricmp(entry.szExeFile, name.c_str()) && (nMinThreads == 0 || (entry.cntThreads > nMinThreads)))
+		{
+			res.push_back(entry.th32ProcessID);
+		}
+	} while (Process32Next(snap, &entry));
+	CloseHandle(snap);
+	return res;
+}
+void LaunchMW() {
+
+	STARTUPINFOA startupinfo = { 0 };
+	startupinfo.cb = sizeof(startupinfo);
+	PROCESS_INFORMATION processinfo = { 0 };
+	unsigned int creationflags = 0;
+
+	if (CreateProcessA(
+		"C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare.exe"
+		, NULL,
+		NULL,
+		NULL,
+		FALSE,
+		creationflags,
+		NULL,
+		NULL,
+		&startupinfo,
+		&processinfo) == FALSE)
+	{
+		std::cout << "CreateProcess failed: " << GetLastError() << std::endl;
+		return;
+	}
+}
 void Dump() {
 	DWORD64 idxArray = 0;
 
-	dbg.InitProcess();
-	DWORD64 pBase = dbg.procBase;
-	bool bGenKey = true;
-	if (bGenKey) {
-		dbg.SingleStep();
-		bExcept = false;
-		DumpDecFnc();
+	//attach process:
+	auto procs = GetProcessIdsByName("modernwarfare.exe");
+	DWORD pid = procs.size() ? procs[0]:0;
+	printf("target proc: %i\n", pid);
+	if (pid == 0) {
+		//launch process and wait..
+		LaunchMW();
+		Sleep(2000);
+		procs = GetProcessIdsByName("modernwarfare.exe");
+		pid = procs.size() ? procs[0] : 0;
 	}
+	if (pid) {
 
+		auto r = dbg.AttachProcess(pid);
+		dbg.SingleStep();
 
+		CONTEXT c = dbg.GetContext();
+		c.Rip = dbg.procBase + 0x1470565;
+		dbg.SetContext(&c);
+		//suspend process.
+		DumpDecFnc();
+
+		//dbg.InitProcess();
+		DWORD64 pBase = dbg.procBase;
+		/*bool bGenKey = true;
+		if (bGenKey) {
+			dbg.SingleStep();
+			bExcept = false;
+			DumpDecFnc();
+		}*/
+
+		//printf("%p dettach!\n",pBase);
+		DebugActiveProcessStop(pid);
+		TerminateProcess(dbg.debuggeehProcess,0);
+		getchar();
+	}
 }
 int main() {
 
